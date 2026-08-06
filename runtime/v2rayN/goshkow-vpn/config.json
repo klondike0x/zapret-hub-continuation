@@ -1,0 +1,132 @@
+{
+  "log": {
+    "level": "info"
+  },
+  "dns": {
+    "strategy": "ipv4_only",
+    "independent_cache": true,
+    "servers": [
+      {
+        "tag": "local",
+        "type": "local",
+        "prefer_go": true
+      },
+      {
+        "tag": "remote",
+        "type": "https",
+        "server": "1.1.1.1",
+        "server_port": 443,
+        "path": "/dns-query",
+        "connect_timeout": "4s",
+        "detour": "proxy",
+        "tls": {
+          "enabled": true,
+          "server_name": "cloudflare-dns.com"
+        }
+      }
+    ],
+    "final": "remote"
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "interface_name": "zapret_hub_tun",
+      "address": [
+        "172.18.0.1/30"
+      ],
+      "mtu": 9000,
+      "auto_route": true,
+      "strict_route": true,
+      "stack": "system"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "vless",
+      "tag": "proxy",
+      "server": "91.108.239.125",
+      "server_port": 443,
+      "uuid": "15e69b12-cf4c-4103-b79c-84e9e56894f0",
+      "tls": {
+        "enabled": true,
+        "server_name": "www.microsoft.com",
+        "insecure": false,
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "HDwrVgj_J5lzQJjbLezUJZKp54UUBdKKCZSTJwQIogY",
+          "short_id": "d392"
+        }
+      },
+      "transport": {
+        "type": "grpc",
+        "service_name": "gk-fi-direct"
+      }
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "block",
+      "tag": "block"
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "local",
+      "strategy": "ipv4_only"
+    },
+    "final": "proxy",
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "action": "route",
+        "protocol": "bittorrent",
+        "outbound": "direct"
+      },
+      {
+        "action": "route",
+        "process_name": [
+          "qbittorrent.exe",
+          "qbittorrent",
+          "transmission-qt.exe",
+          "transmission.exe",
+          "utorrent.exe",
+          "bittorrent.exe",
+          "deluge.exe",
+          "aria2c.exe",
+          "biglybt.exe",
+          "vuze.exe",
+          "tixati.exe",
+          "webtorrent.exe"
+        ],
+        "outbound": "direct"
+      },
+      {
+        "action": "hijack-dns",
+        "port": 53,
+        "network": [
+          "tcp",
+          "udp"
+        ]
+      },
+      {
+        "protocol": "dns",
+        "action": "hijack-dns"
+      },
+      {
+        "action": "route",
+        "ip_is_private": true,
+        "outbound": "direct"
+      }
+    ]
+  }
+}

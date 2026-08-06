@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>Zapret Hub</title>
+    <script>
+      (function () {
+        try {
+          var theme = new URLSearchParams(location.search).get("theme") || "night";
+          document.documentElement.dataset.theme =
+            theme === "light" ? "concrete" : theme === "night" ? "aurora" : "obsidian";
+        } catch (e) {
+          document.documentElement.dataset.theme = "aurora";
+        }
+      })();
+    </script>
+    <style>
+      html, body, #root { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; cursor: default !important; }
+      #startup-boot {
+        position: absolute;
+        inset: 6px;
+        z-index: 2147483000;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        border: 1px solid rgba(255, 248, 240, 0.08);
+        border-radius: 18px;
+        background: #171614;
+        opacity: 1;
+        transition: opacity .28s cubic-bezier(.33, 0, .2, 1);
+        pointer-events: auto;
+        cursor: default !important;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      #startup-boot, #startup-boot * { cursor: default !important; }
+      #startup-boot.is-done { opacity: 0; pointer-events: none; }
+      .startup-chrome {
+        position: absolute;
+        inset: 0 0 auto 0;
+        z-index: 2;
+        height: 44px;
+        display: flex;
+        align-items: stretch;
+        justify-content: flex-end;
+        opacity: 0.55;
+        transition: opacity .18s ease;
+      }
+      .startup-chrome.is-ready { opacity: 1; }
+      .startup-drag {
+        flex: 1;
+        min-width: 0;
+      }
+      .startup-controls {
+        display: flex;
+        align-items: center;
+        padding-right: 7px;
+        gap: 0;
+      }
+      .startup-win-btn {
+        display: grid;
+        place-items: center;
+        width: 36px;
+        height: 36px;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        border-radius: 9px;
+        background: transparent;
+        color: rgba(255, 248, 240, 0.55);
+        transition: background-color .15s ease, color .15s ease;
+      }
+      .startup-win-btn:hover {
+        background: rgba(255, 248, 240, 0.08);
+        color: rgba(255, 248, 240, 0.92);
+      }
+      .startup-win-btn.is-close:hover {
+        background: #e11d48;
+        color: #fff;
+      }
+      .startup-bar {
+        position: relative;
+        width: 88px;
+        height: 4px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: rgba(255, 248, 240, 0.10);
+        pointer-events: none;
+      }
+      .startup-bar::after {
+        content: "";
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 42%;
+        border-radius: inherit;
+        background: linear-gradient(
+          90deg,
+          rgba(255, 248, 240, 0) 0%,
+          rgba(255, 248, 240, 0.72) 50%,
+          rgba(255, 248, 240, 0) 100%
+        );
+        animation: startup-shimmer 1.05s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      }
+      @keyframes startup-shimmer {
+        0% { transform: translateX(-130%); }
+        100% { transform: translateX(280%); }
+      }
+      :root[data-theme="concrete"] #startup-boot {
+        background: #f0eeea;
+        border-color: rgba(40, 36, 32, 0.10);
+      }
+      :root[data-theme="concrete"] .startup-bar {
+        background: rgba(40, 36, 32, 0.12);
+      }
+      :root[data-theme="concrete"] .startup-bar::after {
+        background: linear-gradient(
+          90deg,
+          rgba(40, 36, 32, 0) 0%,
+          rgba(40, 36, 32, 0.55) 50%,
+          rgba(40, 36, 32, 0) 100%
+        );
+      }
+      :root[data-theme="concrete"] .startup-win-btn {
+        color: rgba(40, 36, 32, 0.45);
+      }
+      :root[data-theme="concrete"] .startup-win-btn:hover {
+        background: rgba(40, 36, 32, 0.08);
+        color: rgba(40, 36, 32, 0.9);
+      }
+      :root[data-theme="concrete"] .startup-win-btn.is-close:hover {
+        background: #e11d48;
+        color: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="startup-boot" aria-busy="true" aria-live="polite">
+      <div class="startup-chrome" id="startup-chrome">
+        <div class="startup-drag" id="startup-drag" aria-hidden="true"></div>
+        <div class="startup-controls">
+          <button type="button" class="startup-win-btn" id="startup-minimize" aria-label="Minimize" title="Minimize">
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="6" width="8" height="1" fill="currentColor" /></svg>
+          </button>
+          <button type="button" class="startup-win-btn is-close" id="startup-close" aria-label="Close" title="Close">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6" /></svg>
+          </button>
+        </div>
+      </div>
+      <div class="startup-bar" aria-hidden="true"></div>
+    </div>
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script>
+      window.__zapretHideStartupBoot = function () {
+        var boot = document.getElementById("startup-boot");
+        if (!boot || boot.classList.contains("is-done")) return;
+        boot.classList.add("is-done");
+        boot.setAttribute("aria-busy", "false");
+        var remove = function () {
+          if (boot && boot.parentNode) boot.parentNode.removeChild(boot);
+        };
+        boot.addEventListener("transitionend", remove, { once: true });
+        setTimeout(remove, 400);
+      };
+      // Last-resort: never leave the shimmer forever if React/bootstrap races.
+      setTimeout(function () {
+        if (typeof window.__zapretHideStartupBoot === "function") window.__zapretHideStartupBoot();
+      }, 10000);
+
+      // Early window chrome before React mounts. Reuse one QWebChannel with the React bridge.
+      (function () {
+        var native = null;
+        var chrome = document.getElementById("startup-chrome");
+        var boot = document.getElementById("startup-boot");
+        var minimizeBtn = document.getElementById("startup-minimize");
+        var closeBtn = document.getElementById("startup-close");
+
+        function call(command) {
+          if (!native || typeof native.call !== "function") return;
+          try {
+            native.call(command, "null", function () {});
+          } catch (e) {}
+        }
+
+        window.__zapretBootBridgeCall = call;
+
+        function markReady() {
+          if (chrome) chrome.classList.add("is-ready");
+        }
+
+        function onNative(bridgeObj) {
+          if (!bridgeObj) return;
+          native = bridgeObj;
+          window.__zapretNativeBridge = bridgeObj;
+          markReady();
+        }
+
+        if (minimizeBtn) {
+          minimizeBtn.addEventListener("click", function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            call("window.minimize");
+          });
+        }
+        if (closeBtn) {
+          closeBtn.addEventListener("click", function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            call("window.close");
+          });
+        }
+        if (boot) {
+          boot.addEventListener("pointerdown", function (event) {
+            if (event.button !== 0) return;
+            var target = event.target;
+            if (target && target.closest && target.closest("button")) return;
+            call("window.startDrag");
+          });
+        }
+
+        function bindChannel() {
+          if (window.__zapretNativeBridge) {
+            onNative(window.__zapretNativeBridge);
+            return;
+          }
+          if (!(window.qt && window.qt.webChannelTransport && window.QWebChannel)) {
+            setTimeout(bindChannel, 40);
+            return;
+          }
+          try {
+            new window.QWebChannel(window.qt.webChannelTransport, function (channel) {
+              onNative(channel.objects && channel.objects.bridge);
+            });
+          } catch (e) {
+            setTimeout(bindChannel, 80);
+          }
+        }
+
+        bindChannel();
+      })();
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

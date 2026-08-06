@@ -1,0 +1,23 @@
+name: 🐛 Проблема
+title: '[Проблема] '
+description: Сообщить о проблеме
+labels: ['bug']
+
+body:
+  - type: input
+    id: app_version
+    attributes:
+      label: Версия TG WS Proxy
+      description: Укажите версию приложения (например, v1.2.3)
+      placeholder: vX.Y.Z
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Опишите вашу проблему
+      description: Чётко опишите проблему, с которой вы столкнулись
+      placeholder: Описание проблемы
+    validations:
+      required: true

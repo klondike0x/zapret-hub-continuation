@@ -1,0 +1,12 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="cloudsFill" x1="10" y1="14" x2="54" y2="50" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#95D0FF"/>
+      <stop offset="1" stop-color="#4AA2FF"/>
+    </linearGradient>
+  </defs>
+  <path d="M18 50C11.3726 50 6 44.6274 6 38C6 31.8065 10.5057 26.6654 16.4188 25.6716C18.8073 18.8795 25.277 14 32.9 14C42.2522 14 49.9112 21.1967 50.6464 30.3608C55.028 31.1712 58.35 35.0096 58.35 39.625C58.35 44.8297 54.1297 49.05 48.925 49.05H47.7C46.1403 49.6697 44.4393 50 42.65 50H18Z" fill="url(#cloudsFill)"/>
+  <path d="M18 50C11.3726 50 6 44.6274 6 38C6 31.8065 10.5057 26.6654 16.4188 25.6716C18.8073 18.8795 25.277 14 32.9 14C42.2522 14 49.9112 21.1967 50.6464 30.3608C55.028 31.1712 58.35 35.0096 58.35 39.625C58.35 44.8297 54.1297 49.05 48.925 49.05H47.7C46.1403 49.6697 44.4393 50 42.65 50H18Z" fill="none" stroke="#D8ECFF" stroke-opacity="0.82" stroke-width="2"/>
+  <path d="M17 36.5H47.5" stroke="#F7FBFF" stroke-width="3.3" stroke-linecap="round" stroke-opacity="0.95"/>
+  <path d="M22 30.5H41.5" stroke="#F7FBFF" stroke-width="3.3" stroke-linecap="round" stroke-opacity="0.86"/>
+</svg>

@@ -1,0 +1,11 @@
+# Default owners
+* @Flowseal
+
+# Automation and repository settings
+.github/** @Flowseal
+
+# Documentation
+docs/** @Flowseal
+
+# Core proxy implementation
+proxy/** @Flowseal

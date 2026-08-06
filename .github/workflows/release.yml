@@ -1,0 +1,445 @@
+name: Release Build
+
+# Mirrors local scripts:
+# - portable-*: scripts/build_nuitka.ps1 (+ UninstallerOnly) then prepare_nuitka_release.py
+# - installer: scripts/build_nuitka_installer.ps1 slim path (no -X64Source/-Arm64Source, no payload zips)
+# - publish: attach artifacts to the GitHub Release (no rebuild)
+#
+# Compiler: MSVC is provisioned explicitly on GitHub-hosted runners and is the
+# supported compiler for every published Windows architecture.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Git tag or release version (for example v3.0.2)"
+        required: true
+        default: "v3.0.2"
+      release_name:
+        description: "Release title"
+        required: true
+        default: "Zapret Hub 3.0.2"
+      changelog:
+        description: "Release changelog (optional; otherwise .github/release-notes/$version.md)"
+        required: false
+        default: ""
+
+jobs:
+  portable-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        shell: pwsh
+        env:
+          PIP_PREFER_BINARY: "1"
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Resolve version
+        id: meta
+        shell: pwsh
+        run: |
+          $tag = "${{ inputs.tag || github.ref_name }}"
+          if (-not $tag -or $tag -notmatch '^v?\d') { $tag = "v3.0.2" }
+          $version = $tag.TrimStart("v")
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Build portable app (local build_nuitka.ps1)
+        shell: pwsh
+        run: |
+          .\scripts\build_nuitka.ps1 -Python python -OutputDir dist_nuitka -Version "${{ steps.meta.outputs.version }}" -Compiler msvc
+
+      - name: Build uninstaller only
+        shell: pwsh
+        run: |
+          .\scripts\build_nuitka_installer.ps1 -Python python -OutputDir dist_installer -UninstallerOnly -Compiler msvc
+
+      - name: Optional Authenticode sign portable binaries
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+          WINDOWS_SIGNING_ALLOW_SELF_SIGNED: ${{ vars.WINDOWS_SIGNING_ALLOW_SELF_SIGNED }}
+        run: |
+          if (-not (Test-Path .\scripts\sign_windows_artifacts.ps1)) { throw "sign_windows_artifacts.ps1 is missing." }
+          .\scripts\prepare_windows_signing.ps1
+          $targets = @(
+            ".\dist_nuitka\main.dist\Zapret_Hub.exe",
+            ".\dist_installer\uninstall_zaprethub.exe"
+          )
+          $runtimeTargets = @(
+            ".\dist_nuitka\main.dist\runtime\zapret-discord-youtube\bin\winws.exe",
+            ".\dist_nuitka\main.dist\runtime\zapret2\binaries\windows-x86_64\winws2.exe",
+            ".\dist_nuitka\main.dist\runtime\tg-ws-proxy\bin\TgWsProxy_windows.exe"
+          )
+          $targets = @($targets + $runtimeTargets) | Where-Object { Test-Path -LiteralPath $_ }
+          if ($targets.Count -eq 0) { throw "No portable binaries found to sign." }
+          .\scripts\sign_windows_artifacts.ps1 -Files $targets -RequireSignature
+
+      - name: Zip portable x64
+        shell: pwsh
+        run: |
+          $version = "${{ steps.meta.outputs.version }}"
+          New-Item -ItemType Directory -Force -Path ".\release_$version" | Out-Null
+          python .\scripts\prepare_nuitka_release.py `
+            --x64-source .\dist_nuitka\main.dist `
+            --release-dir ".\release_$version" `
+            --version $version `
+            --uninstaller-x64 .\dist_installer\uninstall_zaprethub.exe
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-portable-win-x64
+          path: release_${{ steps.meta.outputs.version }}/zapret_hub_${{ steps.meta.outputs.version }}_portable_win_x64.zip
+          if-no-files-found: error
+
+  portable-arm64:
+    # Do not publish an ARM64 build until every bundled WinDivert-dependent
+    # runtime is native ARM64. An ARM UI paired with x64 drivers is misleading.
+    if: ${{ false }}
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        shell: pwsh
+        env:
+          PIP_PREFER_BINARY: "1"
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: arm64
+
+      - name: Resolve version
+        id: meta
+        shell: pwsh
+        run: |
+          $tag = "${{ inputs.tag || github.ref_name }}"
+          if (-not $tag -or $tag -notmatch '^v?\d') { $tag = "v3.0.2" }
+          $version = $tag.TrimStart("v")
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Build portable app (local build_nuitka.ps1)
+        shell: pwsh
+        run: |
+          .\scripts\build_nuitka.ps1 -Python python -OutputDir dist_nuitka -Version "${{ steps.meta.outputs.version }}" -Compiler msvc
+
+      - name: Build uninstaller only
+        shell: pwsh
+        run: |
+          .\scripts\build_nuitka_installer.ps1 -Python python -OutputDir dist_installer -UninstallerOnly -Compiler msvc
+
+      - name: Optional Authenticode sign portable binaries
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+          WINDOWS_SIGNING_ALLOW_SELF_SIGNED: ${{ vars.WINDOWS_SIGNING_ALLOW_SELF_SIGNED }}
+        run: |
+          if (-not (Test-Path .\scripts\sign_windows_artifacts.ps1)) { throw "sign_windows_artifacts.ps1 is missing." }
+          .\scripts\prepare_windows_signing.ps1
+          $targets = @(
+            ".\dist_nuitka\main.dist\Zapret_Hub.exe",
+            ".\dist_installer\uninstall_zaprethub.exe"
+          )
+          $runtimeTargets = @(
+            ".\dist_nuitka\main.dist\runtime\zapret-discord-youtube\bin\winws.exe",
+            ".\dist_nuitka\main.dist\runtime\zapret2\binaries\windows-x86_64\winws2.exe",
+            ".\dist_nuitka\main.dist\runtime\tg-ws-proxy\bin\TgWsProxy_windows.exe"
+          )
+          $targets = @($targets + $runtimeTargets) | Where-Object { Test-Path -LiteralPath $_ }
+          if ($targets.Count -eq 0) { throw "No portable binaries found to sign." }
+          .\scripts\sign_windows_artifacts.ps1 -Files $targets -RequireSignature
+
+      - name: Zip portable arm64
+        shell: pwsh
+        run: |
+          $version = "${{ steps.meta.outputs.version }}"
+          New-Item -ItemType Directory -Force -Path ".\release_$version" | Out-Null
+          python .\scripts\prepare_nuitka_release.py `
+            --arm64-source .\dist_nuitka\main.dist `
+            --release-dir ".\release_$version" `
+            --version $version `
+            --uninstaller-arm64 .\dist_installer\uninstall_zaprethub.exe
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-portable-win-arm64
+          path: release_${{ steps.meta.outputs.version }}/zapret_hub_${{ steps.meta.outputs.version }}_portable_win_arm64.zip
+          if-no-files-found: error
+
+  installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Clean leftover payload dirs
+        shell: pwsh
+        run: |
+          Remove-Item .\installer_payload, .\bundled_uninstaller, .\dist_installer -Recurse -Force -ErrorAction SilentlyContinue
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        shell: pwsh
+        env:
+          PIP_PREFER_BINARY: "1"
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Resolve version
+        id: meta
+        shell: pwsh
+        run: |
+          $tag = "${{ inputs.tag || github.ref_name }}"
+          if (-not $tag -or $tag -notmatch '^v?\d') { $tag = "v3.0.2" }
+          $version = $tag.TrimStart("v")
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      # Identical to local slim: no -X64Source / -Arm64Source, no installer_payload zips.
+      # Runtime and architecture-matching uninstaller are downloaded from goshkow.com.
+      # Builds one custom graphical installer without an external setup wrapper.
+      - name: Build slim installer (local build_nuitka_installer.ps1)
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+          WINDOWS_SIGNING_ALLOW_SELF_SIGNED: ${{ vars.WINDOWS_SIGNING_ALLOW_SELF_SIGNED }}
+        run: |
+          $version = "${{ steps.meta.outputs.version }}"
+          $logPath = Join-Path $env:RUNNER_TEMP "zapret-hub-installer-build.log"
+          .\scripts\prepare_windows_signing.ps1
+          .\scripts\build_nuitka_installer.ps1 `
+            -Python python `
+            -OutputDir dist_installer `
+            -Version $version `
+            -Compiler msvc `
+            -SkipPrepareRelease 2>&1 | Tee-Object -FilePath $logPath
+          $buildExitCode = $LASTEXITCODE
+          if ($buildExitCode -ne 0) {
+            # Surface the useful part of a public CI failure without exposing secrets.
+            $tail = (Get-Content -LiteralPath $logPath -Tail 40 -ErrorAction SilentlyContinue) -join "`n"
+            $escapedTail = $tail.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Host "::error title=Slim installer build failed::$escapedTail"
+            exit $buildExitCode
+          }
+
+          # Sign the single graphical installer produced by Nuitka.
+          $installerPath = ".\dist_installer\install_zaprethub_${version}_universal.exe"
+          .\scripts\sign_windows_artifacts.ps1 -Files @($installerPath) -RequireSignature
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Sanity-check installer size
+        shell: pwsh
+        run: |
+          $version = "${{ steps.meta.outputs.version }}"
+          $installer = Get-Item ".\dist_installer\install_zaprethub_${version}_universal.exe"
+          $mb = [math]::Round($installer.Length / 1MB, 1)
+          Write-Host "Slim installer size: $mb MB (no portable app zips / installer_payload)"
+          if ($installer.Length -gt (220MB)) {
+            throw "Installer too large ($mb MB > 220 MB). Fat/uncompressed build rejected."
+          }
+          if ($installer.Length -lt (5MB)) {
+            throw "Installer suspiciously small ($mb MB < 5 MB)."
+          }
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-slim-installer
+          path: dist_installer/install_zaprethub_${{ steps.meta.outputs.version }}_universal.exe
+          if-no-files-found: error
+
+  publish:
+    needs:
+      - portable-x64
+      - installer
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Resolve release metadata
+        id: release_meta
+        shell: pwsh
+        run: |
+          $tag = "${{ inputs.tag || github.ref_name }}"
+          if (-not $tag -or $tag -notmatch '^v?\d') { $tag = "v3.0.2" }
+          $version = $tag.TrimStart("v")
+          $name = "${{ inputs.release_name }}"
+          if (-not $name) { $name = "Zapret Hub $version" }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "name=$name" >> $env:GITHUB_OUTPUT
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v6
+        with:
+          path: .artifacts
+          pattern: release-*
+          merge-multiple: true
+
+      - name: Stage release folder
+        shell: pwsh
+        run: |
+          $version = "${{ steps.release_meta.outputs.version }}"
+          $releaseDir = ".\release_$version"
+          New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+          Write-Host "Downloaded artifacts:"
+          Get-ChildItem .\.artifacts -Recurse -File | ForEach-Object {
+            Write-Host " - $($_.FullName.Substring((Resolve-Path .\.artifacts).Path.Length + 1))"
+          }
+
+          $required = @(
+            "zapret_hub_${version}_portable_win_x64.zip",
+            "install_zaprethub_${version}_universal.exe"
+          )
+          foreach ($name in $required) {
+            $found = Get-ChildItem .\.artifacts -Recurse -File -Filter $name | Select-Object -First 1
+            if (-not $found) { throw "Missing required release asset: $name" }
+            Copy-Item $found.FullName (Join-Path $releaseDir $name) -Force
+            Write-Host "Staged $name ($([math]::Round($found.Length/1MB,1)) MB)"
+          }
+
+          # Digests for mirror/in-app updates: log only (do not attach sidecar files to the GitHub Release).
+          foreach ($arch in @('x64')) {
+            $zipName = "zapret_hub_${version}_portable_win_${arch}.zip"
+            $zipPath = Join-Path $releaseDir $zipName
+            $hash = (Get-FileHash -Algorithm SHA256 -Path $zipPath).Hash.ToLowerInvariant()
+            Write-Host "Digest $arch = sha256:$hash (for mirror JSON; not uploaded as a release asset)"
+          }
+
+      - name: Optional Authenticode signing
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+          WINDOWS_SIGNING_ALLOW_SELF_SIGNED: ${{ vars.WINDOWS_SIGNING_ALLOW_SELF_SIGNED }}
+        run: |
+          $version = "${{ steps.release_meta.outputs.version }}"
+          $releaseDir = ".\release_$version"
+          if (-not (Test-Path .\scripts\sign_windows_artifacts.ps1)) { throw "sign_windows_artifacts.ps1 is missing." }
+          .\scripts\prepare_windows_signing.ps1
+          $targets = @((Join-Path $releaseDir "install_zaprethub_${version}_universal.exe"))
+          .\scripts\sign_windows_artifacts.ps1 -Files $targets -RequireSignature
+
+      - name: Generate WinGet portable manifests
+        shell: pwsh
+        run: |
+          $version = "${{ steps.release_meta.outputs.version }}"
+          $tag = "${{ steps.release_meta.outputs.tag }}"
+          $releaseDir = ".\release_$version"
+          python .\scripts\generate_winget_manifests.py `
+            --version $version `
+            --x64-archive "$releaseDir\zapret_hub_${version}_portable_win_x64.zip" `
+            --output-dir "$releaseDir\winget" `
+            --release-base-url "https://github.com/goshkow/Zapret-Hub/releases/download/$tag" `
+            --bundle "$releaseDir\winget-manifests-${version}.zip"
+
+      - name: Read release notes
+        id: release_notes
+        shell: pwsh
+        env:
+          INPUT_CHANGELOG: ${{ inputs.changelog }}
+        run: |
+          $version = "${{ steps.release_meta.outputs.version }}"
+          $notesPath = ".\.github\release-notes\$version.md"
+          $changelog = $env:INPUT_CHANGELOG
+          if (Test-Path $notesPath) {
+            $body = Get-Content $notesPath -Raw -Encoding UTF8
+          } elseif (-not [string]::IsNullOrWhiteSpace($changelog)) {
+            $body = $changelog.Trim()
+          } else {
+            $body = @(
+              "## Assets",
+              "- ``install_zaprethub_${version}_universal.exe`` - slim installer (downloads app from goshkow.com)",
+              "- ``zapret_hub_${version}_portable_win_x64.zip`` - portable build for Windows x64",
+              "- ``winget-manifests-${version}.zip`` - WinGet manifests"
+            ) -join "`n"
+          }
+          "body<<__ZAPRET_HUB_NOTES__" >> $env:GITHUB_OUTPUT
+          $body >> $env:GITHUB_OUTPUT
+          "__ZAPRET_HUB_NOTES__" >> $env:GITHUB_OUTPUT
+
+      - name: Remove legacy / sidecar release assets
+        # Best-effort: missing release / missing assets / gh not-found must not block publish.
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ steps.release_meta.outputs.tag }}"
+          $ErrorActionPreference = 'Continue'
+          $viewOut = gh release view $tag --json assets --jq '.assets[].name' 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "No existing release for $tag (or view failed); skipping sidecar cleanup."
+            exit 0
+          }
+          $assets = @($viewOut | Where-Object { $_ -and ($_ -notmatch '^gh:') })
+          $version = "${{ steps.release_meta.outputs.version }}"
+          @(
+            "uninstall_zaprethub_${version}_win_x64.exe",
+            "uninstall_zaprethub_${version}_win_arm64.exe",
+            "README_RELEASE.txt",
+            "mirror-update-assets.example.json",
+            "zapret_hub_${version}_portable_win_x64.zip.sha256",
+            "zapret_hub_${version}_portable_win_x64.zip.build_info.json",
+            "zapret_hub_${version}_portable_win_x64.asset.json",
+            "zapret_hub_${version}_portable_win_arm64.zip.sha256",
+            "zapret_hub_${version}_portable_win_arm64.zip.build_info.json",
+            "zapret_hub_${version}_portable_win_arm64.asset.json"
+          ) | ForEach-Object {
+            if ($assets -contains $_) {
+              gh release delete-asset $tag $_ --yes 2>&1 | Out-Host
+              if ($LASTEXITCODE -ne 0) {
+                Write-Warning "Could not remove legacy asset $_ (continuing)."
+              }
+            }
+          }
+          exit 0
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_meta.outputs.tag }}
+          name: ${{ steps.release_meta.outputs.name }}
+          body: ${{ steps.release_notes.outputs.body }}
+          files: |
+            release_${{ steps.release_meta.outputs.version }}/install_zaprethub_${{ steps.release_meta.outputs.version }}_universal.exe
+            release_${{ steps.release_meta.outputs.version }}/zapret_hub_${{ steps.release_meta.outputs.version }}_portable_win_x64.zip
+            release_${{ steps.release_meta.outputs.version }}/winget-manifests-${{ steps.release_meta.outputs.version }}.zip

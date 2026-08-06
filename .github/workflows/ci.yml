@@ -1,0 +1,47 @@
+name: CI Build
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - "codex/**"
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-windows-x64:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        shell: pwsh
+        env:
+          PIP_PREFER_BINARY: "1"
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build Nuitka x64
+        shell: pwsh
+        run: .\scripts\build_nuitka.ps1 -Python python -OutputDir dist_nuitka -Compiler msvc
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: zapret-hub-ci-windows
+          path: |
+            dist_nuitka/main.dist/**
+          if-no-files-found: error

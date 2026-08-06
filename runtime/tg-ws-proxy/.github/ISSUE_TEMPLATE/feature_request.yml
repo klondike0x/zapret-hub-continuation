@@ -1,0 +1,37 @@
+name: 🚀 Предложение
+title: '[Предложение] '
+description: Предложить улучшение или новую функциональность
+labels: ['enhancement']
+
+body:
+  - type: textarea
+    id: solution
+    attributes:
+      label: Предлагаемое решение
+      description: Опишите, как именно вы предлагаете улучшить проект
+      placeholder: |
+        Предлагаю добавить ...
+        Это позволит ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Для какой платформы актуально?
+      description: Выберите платформу, если предложение связано с конкретной ОС
+      options:
+        - Все платформы
+        - Windows
+        - macOS
+        - Linux
+        - Другое
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Дополнительный контекст
+      description: Добавьте примеры, ссылки, скриншоты или другие детали
+      placeholder: Любые дополнительные материалы по предложению
