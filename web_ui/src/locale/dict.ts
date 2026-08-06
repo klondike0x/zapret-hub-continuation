@@ -90,7 +90,7 @@ const ru = {
   "update.installing": "Установка…",
 
   "mods.title": "Пользовательские модификации",
-  "mods.desc": "Свои наборы правил и расширений (не из Marketplace)",
+  "mods.desc": "Свои наборы правил и расширений",
   "mods.import": "Импорт",
   "mods.create": "Создать",
   "mods.empty": "Пока нет модификаций",
@@ -276,7 +276,7 @@ const en: Record<keyof typeof ru, string> = {
   "update.installing": "Installing…",
 
   "mods.title": "Custom modifications",
-  "mods.desc": "Your own rule packs and extensions (not from Marketplace)",
+  "mods.desc": "Your own rule packs and extensions",
   "mods.import": "Import",
   "mods.create": "Create",
   "mods.empty": "No mods yet",

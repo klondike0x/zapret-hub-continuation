@@ -273,7 +273,7 @@ def test_zapret_bundles_keep_installed_layer_order(tmp_path: Path) -> None:
     assert [item["id"] for item in process._get_zapret_bundles(enabled_only=True)] == ["market", "custom", "base"]
 
 
-def test_marketplace_bundle_overlays_complete_zapret_runtime(tmp_path: Path) -> None:
+def test_custom_bundle_overlays_complete_zapret_runtime(tmp_path: Path) -> None:
     base = tmp_path / "runtime" / "zapret-discord-youtube"
     mod = tmp_path / "mod"
     active = tmp_path / "active"

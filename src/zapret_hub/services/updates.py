@@ -309,7 +309,7 @@ class UpdatesManager:
 
             try:
                 request = urllib.request.Request(url, headers=headers, method="GET")
-                # Stay on this thread (same rule as Marketplace): open+read together.
+                # Stay on this thread: open+read together.
                 with urllib.request.urlopen(request, timeout=stall_limit) as response:
                     status = int(getattr(response, "status", None) or 0)
                     if status <= 0:

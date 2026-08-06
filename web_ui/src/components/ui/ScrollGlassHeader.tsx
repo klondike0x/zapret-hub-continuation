@@ -83,7 +83,7 @@ export function ScrollGlassHeader({
       nextClone.querySelectorAll("[id]").forEach((node) => node.removeAttribute("id"));
       sanitizeMirrorClone(nextClone);
       // Keep exactly one blurred snapshot. Cross-fading snapshots leaves two
-      // differently positioned copies visible while Marketplace cards update.
+      // differently positioned copies visible.
       mirror.replaceChildren(nextClone);
       syncAnimatedStyles();
       sync();

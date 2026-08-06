@@ -8,9 +8,8 @@ from urllib.parse import parse_qs, unquote, urlparse
 def parse_zaprethub_url(raw: str) -> dict[str, str] | None:
     """Parse zaprethub:// deep links.
 
-    The marketplace-only deep link scheme was removed together with the
-    Marketplace component; the parser is kept for protocol compatibility and
-    returns None for unknown actions.
+    The marketplace-only deep link scheme was removed; the parser is kept for
+    protocol compatibility and returns None for unknown actions.
     """
     text = str(raw or "").strip().strip('"')
     if not text:

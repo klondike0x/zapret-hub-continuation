@@ -585,7 +585,6 @@ textarea {
 :root[data-theme="aurora"] .app-shell[data-page="mods"] { --page-accent-rgb: 155, 105, 232; }
 :root[data-theme="aurora"] .app-shell[data-page="installed"] { --page-accent-rgb: 167, 139, 250; }
 :root[data-theme="aurora"] .app-shell[data-page="files"] { --page-accent-rgb: 225, 88, 96; }
-:root[data-theme="aurora"] .app-shell[data-page="marketplace"] { --page-accent-rgb: 236, 72, 153; }
 :root[data-theme="aurora"] .app-shell[data-page="logs"] { --page-accent-rgb: 225, 88, 96; }
 :root[data-theme="aurora"] .app-shell[data-page="settings"] { --page-accent-rgb: 150, 155, 164; }
 

@@ -86,8 +86,7 @@ jobs:
           )
           $runtimeTargets = @(
             ".\dist_nuitka\main.dist\runtime\zapret-discord-youtube\bin\winws.exe",
-            ".\dist_nuitka\main.dist\runtime\zapret2\binaries\windows-x86_64\winws2.exe",
-            ".\dist_nuitka\main.dist\runtime\tg-ws-proxy\bin\TgWsProxy_windows.exe"
+            ".\dist_nuitka\main.dist\runtime\zapret2\binaries\windows-x86_64\winws2.exe"
           )
           $targets = @($targets + $runtimeTargets) | Where-Object { Test-Path -LiteralPath $_ }
           if ($targets.Count -eq 0) { throw "No portable binaries found to sign." }
@@ -170,8 +169,7 @@ jobs:
           )
           $runtimeTargets = @(
             ".\dist_nuitka\main.dist\runtime\zapret-discord-youtube\bin\winws.exe",
-            ".\dist_nuitka\main.dist\runtime\zapret2\binaries\windows-x86_64\winws2.exe",
-            ".\dist_nuitka\main.dist\runtime\tg-ws-proxy\bin\TgWsProxy_windows.exe"
+            ".\dist_nuitka\main.dist\runtime\zapret2\binaries\windows-x86_64\winws2.exe"
           )
           $targets = @($targets + $runtimeTargets) | Where-Object { Test-Path -LiteralPath $_ }
           if ($targets.Count -eq 0) { throw "No portable binaries found to sign." }

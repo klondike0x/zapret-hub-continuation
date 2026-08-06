@@ -432,8 +432,8 @@ export function SettingsModal({
             </div>
             <div className="mt-2 text-[10px] leading-relaxed text-fg-mute">
               {L(
-                "Свои моды и файлы Zapret. Моды из Marketplace - в левом меню «Установленные».",
-                "Custom Zapret mods and files. Marketplace mods are under Installed in the sidebar.",
+                "Свои моды и файлы Zapret. Установленные модификации — в левом меню «Установленные».",
+                "Custom Zapret mods and files. Installed mods are under Installed in the sidebar.",
               )}
             </div>
           </Section>
@@ -510,8 +510,8 @@ export function SettingsModal({
             </div>
             <div className="mt-2 text-[10px] leading-relaxed text-fg-mute">
               {L(
-                "Свои моды и файлы Zapret 2. Моды из Marketplace - в левом меню «Установленные».",
-                "Custom Zapret 2 mods and files. Marketplace mods are under Installed in the sidebar.",
+                "Свои моды и файлы Zapret 2. Установленные модификации — в левом меню «Установленные».",
+                "Custom Zapret 2 mods and files. Installed mods are under Installed in the sidebar.",
               )}
             </div>
           </Section>
