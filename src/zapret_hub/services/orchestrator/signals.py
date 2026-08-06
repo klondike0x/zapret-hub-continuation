@@ -468,6 +468,7 @@ class SignalCollector:
                     ["netstat", "-ano", "-p", proto_flag],
                     capture_output=True,
                     text=True,
+                    errors="replace",
                     timeout=2.5,
                     check=False,
                     **quiet,
