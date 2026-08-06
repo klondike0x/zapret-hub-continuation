@@ -3349,6 +3349,9 @@ class WebBridge(QObject):
                     "enabled": bool(item.enabled or item.id in enabled_ids),
                     "diskSize": self._mod_disk_size(item),
                     "compatibility": "zapret" if runtime == "zapret" else "zapret2",
+                    "compatibleFiles": ["general"] if runtime == "zapret" else ["domains", "ip-lists", "advanced"],
+                    "source": "github" if (runtime == "zapret" and getattr(item, "source_url", "")) else "folder",
+                    "runtime": "zapret2" if runtime == "zapret2" else None,
                 }
             )
         return result
