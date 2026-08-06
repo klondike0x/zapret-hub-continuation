@@ -38,3 +38,7 @@ def main(argv: list[str] | None = None) -> int:
             pool_size=known.tg_pool_size,
         )
     raise SystemExit(2)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

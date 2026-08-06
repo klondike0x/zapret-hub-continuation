@@ -2345,6 +2345,31 @@ Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
             self.logging.log("warning", "Failed to open Telegram proxy link", link=link, error=str(error))
             return False
 
+    def _worker_python_executable(self) -> str:
+        if is_packaged_runtime():
+            return sys.executable
+        install_root = self.storage.paths.install_root
+        candidates = [
+            install_root / ".venv" / "Scripts" / "python.exe",
+            install_root / ".venv" / "bin" / "python",
+            Path(sys.executable),
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return str(candidate)
+        return sys.executable
+
+    def _build_worker_env(self) -> dict[str, str]:
+        env = os.environ.copy()
+        if not is_packaged_runtime():
+            src_root = str(self.storage.paths.install_root / "src")
+            current = str(env.get("PYTHONPATH", "") or "")
+            parts = [item for item in current.split(os.pathsep) if item]
+            if src_root not in parts:
+                parts.insert(0, src_root)
+            env["PYTHONPATH"] = os.pathsep.join(parts)
+        return env
+
     def _build_worker_command(self, worker: str, **kwargs: Any) -> list[str]:
         cmd: list[str]
         if is_packaged_runtime():
