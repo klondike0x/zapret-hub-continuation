@@ -542,7 +542,7 @@ export function SettingsModal({
 
   const renderFooter = (className: string) => (
     <footer className={className}>
-      <div className="max-w-[470px] whitespace-pre-line text-[9px] leading-relaxed text-fg-mute">{L("Благодарности: Zapret от Flowseal; Zapret 2 от bol-van.\nОригинальный Zapret Hub (goshkow, MIT).", "Credits: Zapret by Flowseal; Zapret 2 by bol-van.\nOriginal Zapret Hub by goshkow (MIT).")}</div>
+      <div className="max-w-[470px] whitespace-pre-line text-[9px] leading-relaxed text-fg-mute">{L("Благодарности: Zapret от Flowseal; Zapret 2 от bol-van.\nОригинальный Zapret Hub (goshkow, MIT).\nФорк klondike0x под лицензией GPLv3.", "Credits: Zapret by Flowseal; Zapret 2 by bol-van.\nOriginal Zapret Hub by goshkow (MIT).\nFork by klondike0x under GPLv3.")}</div>
       <div className="flex items-center gap-2">
         {!embedded && <button onClick={onClose} className="rounded-[9px] border border-line-1 bg-bg-1 px-3 py-1.5 text-[11px] text-fg-dim hover:bg-bg-3 hover:text-fg">{t("settings.close")}</button>}
         <button

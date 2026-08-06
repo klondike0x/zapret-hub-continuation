@@ -2,7 +2,7 @@ import type { Locale } from "@/bridge/types";
 
 const ru = {
   "app.name": "Zapret Hub",
-  "app.by": "by goshkow",
+  "app.by": "by goshkow & klondike0x",
 
   "nav.quick": "Быстрый доступ",
   "nav.services": "Сервисы",
@@ -188,7 +188,7 @@ const ru = {
 
 const en: Record<keyof typeof ru, string> = {
   "app.name": "Zapret Hub",
-  "app.by": "by goshkow",
+  "app.by": "by goshkow & klondike0x",
 
   "nav.quick": "Quick access",
   "nav.services": "Services",
