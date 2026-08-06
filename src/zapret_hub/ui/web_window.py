@@ -3468,7 +3468,11 @@ class WebBridge(QObject):
                     "description": item.description,
                     "createdAt": int(time.time() * 1000),
                     "iconUrl": self._mod_cover_url(item),
-                    "sourceUrl": str(getattr(item, "source_url", "") or ""),
+                    "sourceUrl": (
+                        str(getattr(item, "source_url", "") or "")
+                        if str(getattr(item, "source_url", "") or "").startswith(("http://", "https://"))
+                        else ""
+                    ),
                     "version": item.version,
                     "enabled": bool(item.enabled or item.id in enabled_ids),
                     "diskSize": self._mod_disk_size(item),

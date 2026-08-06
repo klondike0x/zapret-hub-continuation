@@ -27,7 +27,6 @@ import { useToast } from "@/components/shell/ToastHost";
 import type { Mod, RuntimeId } from "@/bridge/types";
 
 type InstalledView = "zapret" | "zapret2";
-
 function formatFileSize(bytes?: number) {
   const value = Math.max(0, Number(bytes || 0));
   if (!value) return "";
@@ -219,6 +218,7 @@ export function InstalledModsPage() {
   );
   const [view, setView] = useState<InstalledView>("zapret");
   const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string; prefix: "mods" | "mods2" } | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const dragWidthRef = useRef<number | null>(null);
@@ -257,6 +257,13 @@ export function InstalledModsPage() {
     void bridge.call(`${prefix}.reorder`, { orderedIds });
   };
 
+  const doImport = (source: Mod["source"]) => {
+    const ref = source === "github" ? window.prompt(ru ? "Вставьте ссылку на GitHub-репозиторий" : "Paste the GitHub repository URL")?.trim() : undefined;
+    if (source === "github" && !ref) return;
+    void bridge.call(`${prefix}.import`, { source, ref });
+    setImportOpen(false);
+  };
+
   return (
     <div className="relative h-full overflow-hidden">
       <div ref={scrollerRef} className="scroll-area glass-page-scroll h-full overflow-auto" style={{ "--glass-header-height": "86px" } as CSSProperties}>
@@ -266,6 +273,13 @@ export function InstalledModsPage() {
             <p className="text-[12px] text-fg-mute">
               {ru ? "Пока нет модификаций…" : "No mods yet…"}
             </p>
+            <button
+              type="button"
+              onClick={() => setImportOpen(true)}
+              className="rounded-lg bg-[rgb(var(--page-accent-rgb))] px-3.5 py-1.5 text-[11px] font-medium text-white transition hover:brightness-110"
+            >
+              {ru ? "Добавить" : "Add"}
+            </button>
           </div>
         ) : (
           <DndContext
@@ -323,17 +337,47 @@ export function InstalledModsPage() {
                 : "Locally installed Zapret and Zapret 2 mods"}
             </p>
           </div>
-          <Segmented
-            value={view}
-            onChange={setView}
-            size="sm"
-            options={[
-              { value: "zapret", label: ru ? "Zapret" : "Zapret" },
-              { value: "zapret2", label: "Zapret 2" },
-            ]}
-          />
+          <div className="flex items-center gap-2">
+            <Segmented
+              value={view}
+              onChange={setView}
+              size="sm"
+              options={[
+                { value: "zapret", label: ru ? "Zapret" : "Zapret" },
+                { value: "zapret2", label: "Zapret 2" },
+              ]}
+            />
+            <button
+              type="button"
+              onClick={() => setImportOpen(true)}
+              className="rounded-lg bg-[rgb(var(--page-accent-rgb))] px-3.5 py-1.5 text-[11px] font-medium text-white transition hover:brightness-110"
+            >
+              {ru ? "Добавить" : "Add"}
+            </button>
+          </div>
         </div>
       </ScrollGlassHeader>
+      {importOpen && (
+        <div className="absolute inset-0 z-30 grid place-items-center bg-black/50" onMouseDown={() => setImportOpen(false)}>
+          <div className="w-80 rounded-xl border border-line-2 bg-bg-2 p-4" onMouseDown={(event) => event.stopPropagation()}>
+            <h3 className="text-[13px] font-semibold text-fg">{ru ? "Импорт модификации" : "Import mod"}</h3>
+            <p className="mt-1 text-[11px] text-fg-dim">
+              {view === "zapret2" ? (ru ? "Поддерживаются папки, ZIP, TXT и Lua-файлы Zapret 2." : "Folders, ZIP, TXT and Lua files for Zapret 2 are supported.") : (ru ? "Импортируйте папку, ZIP, файлы или GitHub-репозиторий." : "Import a folder, ZIP, files or a GitHub repository.")}
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {(view === "zapret2" ? ([["folder", ru ? "Папка" : "Folder"], ["zip", "ZIP"], ["files", ru ? "Файлы" : "Files"]] as const) : ([["folder", ru ? "Папка" : "Folder"], ["zip", "ZIP"], ["files", ru ? "Файлы" : "Files"], ["github", "GitHub"]] as const)).map(([source, label]) => (
+                <button
+                  key={source}
+                  onClick={() => doImport(source as Mod["source"])}
+                  className="rounded-lg border border-line-1 bg-bg-1 px-3 py-2 text-[11px] text-fg hover:bg-bg-3"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
       <ConfirmModal
         open={Boolean(pendingDelete)}
         title={ru ? "Удаление модификации" : "Remove modification"}

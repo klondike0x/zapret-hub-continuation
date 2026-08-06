@@ -1029,9 +1029,12 @@ class UpdatesManager:
         startupinfo = None
         creationflags = 0
         if sys.platform.startswith("win"):
+            # DETACHED_PROCESS must NOT be used here: on some PowerShell 5.1
+            # builds it makes powershell.exe exit 0 immediately without ever
+            # executing the -File script (helper log/ready files never appear
+            # and the app reports "Помощник обновления завершился до запуска").
             creationflags = (
                 getattr(subprocess, "CREATE_NO_WINDOW", 0)
-                | getattr(subprocess, "DETACHED_PROCESS", 0)
                 | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
             )
             startupinfo = subprocess.STARTUPINFO()
