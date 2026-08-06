@@ -21,7 +21,7 @@ from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMenu, QSy
 
 from zapret_hub.services.service_catalog import SERVICE_PRESETS
 from zapret_hub.services.onboarding_state import onboarding_is_update
-from zapret_hub.runtime_env import development_install_root, is_packaged_runtime, packaged_install_root
+from zapret_hub.runtime_env import is_packaged_runtime, packaged_install_root
 
 
 _COMPONENT_IDS = ("zapret", "zapret2", "xbox-dns")
@@ -3635,7 +3635,9 @@ class WebMainWindow(QMainWindow):
     def _resolve_install_root() -> Path:
         if is_packaged_runtime():
             return packaged_install_root()
-        return development_install_root(__file__)
+        # web_window.py lives one level deeper than app.py/bootstrap.py (ui/ subpackage),
+        # so the dev root is parents[3] here, not parents[2].
+        return Path(__file__).resolve().parents[3]
 
     @classmethod
     def create_early_shell(cls, icon: QIcon | None = None) -> "WebMainWindow":
