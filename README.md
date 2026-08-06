@@ -16,8 +16,7 @@ VPN and Marketplace components have been removed. This project now only provides
 </p>
 
 <a href="https://github.com/klondike0x/zapret-hub-continuation/releases/latest">
-  <img src="https://img.shields.io/badge/Скачать-последнюю%20версию-blue?style=for-the-badge&logo=github" alt="Скачать последнюю версию">
-</a>
+  <img src="https://img.shields.io/badge/Скачать-последнюю%20версию-blue?style=for-the-badge&logo=github" alt="Скачать последнюю версию"></a>
 
 <img src="https://img.shields.io/github/downloads/klondike0x/zapret-hub-continuation/total?style=for-the-badge&label=%D0%97%D0%B0%D0%B3%D1%80%D1%83%D0%B7%D0%BE%D0%BA" alt="Всего загрузок">
 <img src="https://img.shields.io/github/stars/klondike0x/zapret-hub-continuation?style=for-the-badge&label=%D0%97%D0%B2%D1%91%D0%B7%D0%B4" alt="Звёзды">
