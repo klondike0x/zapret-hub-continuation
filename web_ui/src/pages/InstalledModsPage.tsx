@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -17,16 +17,14 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { getBridge } from "@/bridge";
-import { applyMarketplaceMods, useAppState, useBridge, patchOptimistic } from "@/hooks/useBridgeState";
+import { useAppState, useBridge, patchOptimistic } from "@/hooks/useBridgeState";
 import { useLocale } from "@/hooks/useLocale";
-import { useMarketplaceQueue } from "@/hooks/useMarketplaceQueue";
 import { Segmented } from "@/components/ui/Segmented";
 import { IosToggle } from "@/components/ui/IosToggle";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { ScrollGlassHeader } from "@/components/ui/ScrollGlassHeader";
 import { useToast } from "@/components/shell/ToastHost";
-import type { MarketplaceCompatibility, Mod } from "@/bridge/types";
+import type { Mod, RuntimeId } from "@/bridge/types";
 
 type InstalledView = "zapret" | "zapret2";
 
@@ -61,7 +59,7 @@ function ProjectCover({ url, title }: { url?: string; title: string }) {
   );
 }
 
-function CompatPill({ value }: { value: MarketplaceCompatibility }) {
+function CompatPill({ value }: { value: RuntimeId }) {
   const label = value === "zapret2" ? "Zapret 2" : "Zapret";
   return (
     <span className="rounded-full bg-[color-mix(in_srgb,#9b69e8_28%,transparent)] px-2 py-0.5 text-[10px] font-medium text-[#c4b5fd]">
@@ -74,26 +72,21 @@ function ModCardBody({
   mod,
   locale,
   compatibility,
-  downloading,
   onToggle,
-  onUpdate,
   onOpenSite,
   onDelete,
   dragHandle,
 }: {
   mod: Mod;
   locale: string;
-  compatibility: MarketplaceCompatibility;
-  downloading: boolean;
+  compatibility: RuntimeId;
   onToggle?: (on: boolean) => void;
-  onUpdate?: () => void;
   onOpenSite?: () => void;
   onDelete?: () => void;
   dragHandle?: ReactNode;
 }) {
   const ru = locale === "ru";
   const canOpenSite = Boolean(mod.sourceUrl);
-  const canUpdate = Boolean(mod.marketplaceSlug && mod.updateAvailable);
   return (
     <>
       {dragHandle}
@@ -111,11 +104,6 @@ function ModCardBody({
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <CompatPill value={compatibility} />
           {mod.version ? <span className="rounded-full bg-bg-3 px-2 py-0.5 text-[10px] text-fg-dim">v{mod.version}</span> : null}
-          {canUpdate ? (
-            <span className="rounded-full bg-[color-mix(in_srgb,rgb(var(--page-accent-rgb))_22%,transparent)] px-2 py-0.5 text-[10px] text-[rgb(var(--page-accent-rgb))]">
-              {ru ? `есть v${mod.latestVersion}` : `v${mod.latestVersion} available`}
-            </span>
-          ) : null}
         </div>
       </div>
       <div className="flex shrink-0 flex-col items-end justify-between gap-2 pl-1">
@@ -124,16 +112,6 @@ function ModCardBody({
           <IosToggle on={mod.enabled} onChange={onToggle ?? (() => undefined)} />
         </div>
         <div className="flex flex-wrap items-center justify-end gap-1">
-          {canUpdate ? (
-            <button
-              type="button"
-              disabled={downloading || !onUpdate}
-              onClick={onUpdate}
-              className="rounded-md bg-[rgb(var(--page-accent-rgb))] px-2 py-0.5 text-[10px] font-medium text-white disabled:opacity-50"
-            >
-              {downloading ? "…" : ru ? "Обновить" : "Update"}
-            </button>
-          ) : null}
           {canOpenSite ? (
             <button
               type="button"
@@ -160,18 +138,14 @@ function SortableLocalCard({
   mod,
   locale,
   compatibility,
-  downloading,
   onToggle,
-  onUpdate,
   onOpenSite,
   onDelete,
 }: {
   mod: Mod;
   locale: string;
-  compatibility: MarketplaceCompatibility;
-  downloading: boolean;
+  compatibility: RuntimeId;
   onToggle: (on: boolean) => void;
-  onUpdate: () => void;
   onOpenSite: () => void;
   onDelete: () => void;
 }) {
@@ -200,9 +174,7 @@ function SortableLocalCard({
         mod={mod}
         locale={locale}
         compatibility={compatibility}
-        downloading={downloading}
         onToggle={onToggle}
-        onUpdate={onUpdate}
         onOpenSite={onOpenSite}
         onDelete={onDelete}
         dragHandle={(
@@ -228,105 +200,35 @@ function SortableLocalCard({
   );
 }
 
-function OverlayLocalCard({
-  mod,
-  locale,
-  compatibility,
-  downloading,
-}: {
-  mod: Mod;
-  locale: string;
-  compatibility: MarketplaceCompatibility;
-  downloading: boolean;
-}) {
+function OverlayLocalCard({ mod, locale, compatibility }: { mod: Mod; locale: string; compatibility: RuntimeId }) {
   return (
-    <article className="flex cursor-grabbing items-stretch gap-3 rounded-[14px] border border-line-2 bg-[color-mix(in_srgb,var(--bg-2)_96%,transparent)] px-3.5 py-3 shadow-[0_12px_28px_rgba(0,0,0,0.28)]">
-      <ModCardBody
-        mod={mod}
-        locale={locale}
-        compatibility={compatibility}
-        downloading={downloading}
-        dragHandle={(
-          <div className="mt-1 grid h-8 w-6 shrink-0 place-items-center text-fg-mute" aria-hidden>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-              <circle cx="8" cy="6" r="1.5" />
-              <circle cx="8" cy="12" r="1.5" />
-              <circle cx="8" cy="18" r="1.5" />
-              <circle cx="16" cy="6" r="1.5" />
-              <circle cx="16" cy="12" r="1.5" />
-              <circle cx="16" cy="18" r="1.5" />
-            </svg>
-          </div>
-        )}
-      />
+    <article className="flex items-stretch gap-3 rounded-[14px] border border-line-2 bg-bg-2 px-3.5 py-3 shadow-[0_18px_40px_-18px_rgba(0,0,0,.55)]">
+      <ModCardBody mod={mod} locale={locale} compatibility={compatibility} />
     </article>
   );
 }
 
-function isMarketplaceMod(mod: Mod) {
-  return Boolean(String(mod.marketplaceSlug || "").trim());
-}
-
-export function InstalledModsPage({ onOpenMarketplace }: { onOpenMarketplace?: () => void }) {
+export function InstalledModsPage() {
   const bridge = useBridge();
   const state = useAppState();
   const { locale } = useLocale();
   const toast = useToast();
-  const queueApi = useMarketplaceQueue();
   const ru = locale === "ru";
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   );
   const [view, setView] = useState<InstalledView>("zapret");
-  const [queued, setQueued] = useState<Set<string>>(new Set());
-  const [pendingDelete, setPendingDelete] = useState<{ id: string; slug: string; name: string; prefix: "mods" | "mods2" } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string; prefix: "mods" | "mods2" } | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const dragWidthRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    const off = getBridge().subscribe("marketplace.download-progress", (payload) => {
-      const slug = String(payload?.slug || "");
-      const status = String(payload?.status || "");
-      if (!slug) return;
-      setQueued((prev) => {
-        const next = new Set(prev);
-        if (status === "queued" || status === "starting" || status === "downloading" || status === "installing" || status === "removing") {
-          next.add(slug);
-        } else {
-          next.delete(slug);
-        }
-        return next;
-      });
-    });
-    return off;
-  }, []);
-
-  useEffect(() => {
-    void bridge.call("marketplace.check-updates", undefined).catch(() => undefined);
-  }, [bridge]);
-
-  useEffect(() => {
-    // Legacy Zapret2 installs could retain a file:// cover from a deleted
-    // temporary folder. Repairing runs in the backend and never blocks this list.
-    void bridge.call("marketplace.repair-covers", undefined).catch(() => undefined);
-  }, [bridge]);
-
-  const installedZapret = useMemo(
-    () =>
-      (state?.mods || []).filter(
-        (m) => isMarketplaceMod(m) && m.id.toLowerCase() !== "hub" && m.name.trim().toLowerCase() !== "hub",
-      ),
-    [state?.mods],
+  const list = useMemo(
+    () => (view === "zapret2" ? state?.mods2 || [] : state?.mods || []),
+    [view, state?.mods, state?.mods2],
   );
-  const installedZapret2 = useMemo(
-    () => (state?.mods2 || []).filter((m) => isMarketplaceMod(m)),
-    [state?.mods2],
-  );
-
-  const list = view === "zapret2" ? installedZapret2 : installedZapret;
   const prefix = view === "zapret2" ? "mods2" : "mods";
-  const compatibility: MarketplaceCompatibility = view === "zapret2" ? "zapret2" : "zapret";
+  const compatibility: RuntimeId = view === "zapret2" ? "zapret2" : "zapret";
   const itemIds = useMemo(() => list.map((m) => m.id), [list]);
   const activeMod = activeId ? list.find((m) => m.id === activeId) ?? null : null;
 
@@ -352,48 +254,7 @@ export function InstalledModsPage({ onOpenMarketplace }: { onOpenMarketplace?: (
     if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return;
 
     const orderedIds = arrayMove(ids, oldIndex, newIndex);
-    const byId = new Map(list.map((m) => [m.id, m]));
-    const nextList = orderedIds.map((id) => byId.get(id)!).filter(Boolean);
-
-    // Optimistic order first so drop lands in place (no second reshuffle).
-    if (prefix === "mods2") {
-      applyMarketplaceMods(state.mods || [], nextList);
-    } else {
-      applyMarketplaceMods(nextList, state.mods2 || []);
-    }
     void bridge.call(`${prefix}.reorder`, { orderedIds });
-  };
-
-  const enqueue = async (mod: Mod) => {
-    if (!mod.marketplaceSlug) return;
-    const slug = mod.marketplaceSlug;
-    setQueued((prev) => new Set(prev).add(slug));
-    const clearQueued = () =>
-      setQueued((prev) => {
-        const next = new Set(prev);
-        next.delete(slug);
-        return next;
-      });
-    try {
-      const result = await queueApi.enqueue({
-        slug,
-        title: mod.name,
-        compatibility,
-        author: mod.author,
-        summary: mod.description,
-        iconUrl: mod.iconUrl,
-        projectUrl: mod.sourceUrl,
-        versionId: mod.versionId ?? null,
-        marketplaceVersion: mod.latestVersion || "",
-        allowUpdate: Boolean(mod.updateAvailable),
-      });
-      // No-op / reject: clear spinner immediately. Real jobs clear via download-progress.
-      if (!result?.queued || result.alreadyInstalled) {
-        clearQueued();
-      }
-    } catch {
-      clearQueued();
-    }
   };
 
   return (
@@ -405,13 +266,6 @@ export function InstalledModsPage({ onOpenMarketplace }: { onOpenMarketplace?: (
             <p className="text-[12px] text-fg-mute">
               {ru ? "Пока нет модификаций…" : "No mods yet…"}
             </p>
-            <button
-              type="button"
-              onClick={() => onOpenMarketplace?.()}
-              className="rounded-lg bg-[rgb(var(--page-accent-rgb))] px-3.5 py-1.5 text-[11px] font-medium text-white transition hover:brightness-110"
-            >
-              {ru ? "Добавить" : "Add"}
-            </button>
           </div>
         ) : (
           <DndContext
@@ -430,7 +284,6 @@ export function InstalledModsPage({ onOpenMarketplace }: { onOpenMarketplace?: (
                     mod={mod}
                     locale={locale}
                     compatibility={compatibility}
-                    downloading={Boolean(mod.marketplaceSlug && queued.has(mod.marketplaceSlug))}
                     onToggle={(on) => {
                       if (prefix === "mods2") {
                         patchOptimistic({ mods2: { [mod.id]: { enabled: on } } });
@@ -439,12 +292,11 @@ export function InstalledModsPage({ onOpenMarketplace }: { onOpenMarketplace?: (
                       }
                       void bridge.call(`${prefix}.toggle`, { id: mod.id, on });
                     }}
-                    onUpdate={() => void enqueue(mod)}
                     onOpenSite={() => {
-                      if (mod.sourceUrl) void bridge.call("marketplace.open-url", { url: mod.sourceUrl });
+                      if (mod.sourceUrl) void bridge.call("ui.open-url", { url: mod.sourceUrl });
                     }}
                     onDelete={() => {
-                      setPendingDelete({ id: mod.id, slug: String(mod.marketplaceSlug || ""), name: mod.name, prefix });
+                      setPendingDelete({ id: mod.id, name: mod.name, prefix });
                     }}
                   />
                 ))}
@@ -453,12 +305,7 @@ export function InstalledModsPage({ onOpenMarketplace }: { onOpenMarketplace?: (
             <DragOverlay dropAnimation={null} adjustScale={false}>
               {activeMod ? (
                 <div style={dragWidthRef.current ? { width: dragWidthRef.current } : undefined}>
-                  <OverlayLocalCard
-                    mod={activeMod}
-                    locale={locale}
-                    compatibility={compatibility}
-                    downloading={Boolean(activeMod.marketplaceSlug && queued.has(activeMod.marketplaceSlug))}
-                  />
+                  <OverlayLocalCard mod={activeMod} locale={locale} compatibility={compatibility} />
                 </div>
               ) : null}
             </DragOverlay>
@@ -472,8 +319,8 @@ export function InstalledModsPage({ onOpenMarketplace }: { onOpenMarketplace?: (
             <h2 className="text-[15px] font-semibold text-fg">{ru ? "Установленные модификации" : "Installed mods"}</h2>
             <p className="mt-0.5 text-[11px] text-fg-dim">
               {ru
-                ? "Модификации, установленные из Zapret Marketplace"
-                : "Mods installed from Zapret Marketplace"}
+                ? "Локально установленные модификации Zapret и Zapret 2"
+                : "Locally installed Zapret and Zapret 2 mods"}
             </p>
           </div>
           <Segmented
@@ -497,15 +344,9 @@ export function InstalledModsPage({ onOpenMarketplace }: { onOpenMarketplace?: (
           const target = pendingDelete;
           setPendingDelete(null);
           if (!target || !state) return;
-          const previousMods = state.mods || [];
-          const previousMods2 = state.mods2 || [];
-          const nextMods = target.prefix === "mods" ? previousMods.filter((mod) => mod.id !== target.id) : previousMods;
-          const nextMods2 = target.prefix === "mods2" ? previousMods2.filter((mod) => mod.id !== target.id) : previousMods2;
-          applyMarketplaceMods(nextMods, nextMods2);
-          void bridge.call("marketplace.remove", { slug: target.slug }).then((result) => {
-            applyMarketplaceMods(result.mods || [], result.mods2 || []);
+          void bridge.call(`${target.prefix}.delete`, { id: target.id }).then(() => {
+            toast.push({ message: ru ? "Модификация удалена" : "Mod removed", kind: "success" });
           }).catch(() => {
-            applyMarketplaceMods(previousMods, previousMods2);
             toast.push({ message: ru ? "Не удалось удалить модификацию" : "Could not remove the modification", kind: "error" });
           });
         }}

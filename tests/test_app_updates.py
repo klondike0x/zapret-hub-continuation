@@ -11,26 +11,26 @@ MIRROR_FIXTURE = {
     "version": "2.1.2",
     "tag": "v2.1.2",
     "changelog": "• Fix one\n• Fix two",
-    "github_url": "https://github.com/goshkow/Zapret-Hub/releases/tag/v2.1.2",
+    "github_url": "https://github.com/klondike0x/zapret-hub-continuation/releases/tag/v2.1.2",
     "published_at": "2026-06-01T12:00:00Z",
     "binary_updated_at": "2026-06-01T12:30:00Z",
     "assets": {
         "installer": {
             "name": "Zapret_Hub_Setup_2.1.2.exe",
-            "download_url": "https://goshkow.com/zapret-hub/installer",
+            "download_url": "https://github.com/klondike0x/zapret-hub-continuation/releases/download/v2.1.2/installer",
             "digest": "sha256:aaa",
             "size": 10,
         },
         "x64": {
             "name": "zapret_hub_2.1.2_portable_win_x64.zip",
-            "download_url": "https://goshkow.com/zapret-hub/x64",
+            "download_url": "https://github.com/klondike0x/zapret-hub-continuation/releases/download/v2.1.2/x64",
             "digest": "sha256:bbb",
             "size": 20,
             "updated_at": "2026-06-01T12:30:00Z",
         },
         "arm64": {
             "name": "zapret_hub_2.1.2_portable_win_arm64.zip",
-            "download_url": "https://goshkow.com/zapret-hub/arm64",
+            "download_url": "https://github.com/klondike0x/zapret-hub-continuation/releases/download/v2.1.2/arm64",
             "digest": "sha256:ccc",
             "size": 21,
         },
@@ -47,17 +47,17 @@ def test_normalize_mirror_payload_maps_download_urls() -> None:
     assets = entries[0]["payload"]["assets"]  # type: ignore[index]
     assert isinstance(assets, list)
     by_arch = {str(item.get("architecture")): item for item in assets}
-    assert by_arch["x64"]["browser_download_url"] == "https://goshkow.com/zapret-hub/x64"
-    assert by_arch["arm64"]["browser_download_url"] == "https://goshkow.com/zapret-hub/arm64"
+    assert by_arch["x64"]["browser_download_url"] == "https://github.com/klondike0x/zapret-hub-continuation/releases/download/v2.1.2/x64"
+    assert by_arch["arm64"]["browser_download_url"] == "https://github.com/klondike0x/zapret-hub-continuation/releases/download/v2.1.2/arm64"
 
 
 def test_mirror_release_index_is_normalized_to_exact_github_tag() -> None:
     mgr = UpdatesManager.__new__(UpdatesManager)
-    payload = {**MIRROR_FIXTURE, "github_url": "https://github.com/goshkow/Zapret-Hub/releases"}
+    payload = {**MIRROR_FIXTURE, "github_url": "https://github.com/klondike0x/zapret-hub-continuation/releases"}
 
     entries = UpdatesManager._normalize_release_entries(mgr, payload)
 
-    assert entries[0]["html_url"] == "https://github.com/goshkow/Zapret-Hub/releases/tag/v2.1.2"
+    assert entries[0]["html_url"] == "https://github.com/klondike0x/zapret-hub-continuation/releases/tag/v2.1.2"
 
 
 def test_pick_release_asset_prefers_architecture_key(monkeypatch) -> None:
@@ -68,7 +68,7 @@ def test_pick_release_asset_prefers_architecture_key(monkeypatch) -> None:
     picked = UpdatesManager._pick_release_asset(mgr, assets)  # type: ignore[arg-type]
     assert picked is not None
     assert picked["architecture"] == "x64"
-    assert picked["browser_download_url"] == "https://goshkow.com/zapret-hub/x64"
+    assert picked["browser_download_url"] == "https://github.com/klondike0x/zapret-hub-continuation/releases/download/v2.1.2/x64"
 
 
 def test_pick_release_asset_arm(monkeypatch) -> None:
@@ -89,7 +89,7 @@ def test_version_compare_available_and_uptodate(monkeypatch) -> None:
     status = UpdatesManager._build_application_release_status(mgr, MIRROR_FIXTURE)
     assert status["status"] == "available"
     assert status["latest_version"] == "2.1.2"
-    assert status["asset_url"] == "https://goshkow.com/zapret-hub/x64"
+    assert status["asset_url"] == "https://github.com/klondike0x/zapret-hub-continuation/releases/download/v2.1.2/x64"
     assert status["asset_digest"].endswith("bbb") or "bbb" in status["asset_digest"]
 
     monkeypatch.setattr("zapret_hub.services.updates.__version__", "9.9.9")

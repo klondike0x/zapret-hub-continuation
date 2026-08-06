@@ -172,11 +172,7 @@ class SmartTuner:
                         TunerStep(
                             kind="enable_mod",
                             value=str(mod_id),
-                            reason=(
-                                "knowledge_marketplace_mod"
-                                if str(getattr(available_mods[str(mod_id)], "marketplace_slug", "") or "").strip()
-                                else "knowledge_user_mod"
-                            ),
+                            reason="knowledge_user_mod",
                             label_ru=f"Включаю модификацию {mod_id}",
                             label_en=f"Enabling modification {mod_id}",
                         )
@@ -411,11 +407,7 @@ class SmartTuner:
                     TunerStep(
                         kind="enable_mod",
                         value=mod_id,
-                        reason=(
-                            "marketplace_mod"
-                            if str(getattr(mod, "marketplace_slug", "") or "").strip()
-                            else "user_mod"
-                        ),
+                        reason="user_mod",
                         label_ru=f"Подключаю модификацию «{getattr(mod, 'name', mod_id)}»",
                         label_en=f"Enabling modification “{getattr(mod, 'name', mod_id)}”",
                     )

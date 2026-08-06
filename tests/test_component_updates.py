@@ -18,14 +18,6 @@ RELEASE_FEED = b'''<?xml version="1.0" encoding="UTF-8"?>
   </entry>
 </feed>'''
 
-TG_RELEASE_FEED = b'''<?xml version="1.0" encoding="UTF-8"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
-  <entry>
-    <title>Release v1.8.1</title>
-    <link rel="alternate" href="https://github.com/Flowseal/tg-ws-proxy/releases/tag/v1.8.1"/>
-  </entry>
-</feed>'''
-
 COMMIT_FEED = b'''<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
@@ -92,8 +84,6 @@ class FeedGitHub:
         raise RuntimeError("HTTP Error 403: rate limit exceeded")
 
     def github_bytes(self, url: str, **_kwargs) -> bytes:
-        if "tg-ws-proxy" in url:
-            return TG_RELEASE_FEED
         if "commits/master.atom" in url:
             return COMMIT_FEED
         return RELEASE_FEED
@@ -111,13 +101,6 @@ def test_zapret_release_resolves_1_10_0() -> None:
     assert release["latest_version"] == "1.10.0"
     assert release["asset_url"].endswith("/1.10.0/zapret-discord-youtube-1.10.0.zip")
     assert release["zipball_url"].endswith("/refs/tags/1.10.0")
-
-
-def test_tg_proxy_release_falls_back_to_atom_after_rate_limit() -> None:
-    release = manager().fetch_latest_tg_ws_proxy_release()
-    assert release["latest_version"] == "1.8.1"
-    assert release["source_url"].endswith("/refs/tags/v1.8.1")
-    assert release["exe_url"].endswith("/v1.8.1/TgWsProxy_windows.exe")
 
 
 def test_zapret2_release_uses_bol_van_zapret2_tags() -> None:
@@ -268,7 +251,7 @@ def test_zapret_bundles_keep_installed_layer_order(tmp_path: Path) -> None:
         folder.mkdir(parents=True)
 
     installed = [
-        {"id": "market", "path": str(first), "source_type": "zapret_bundle", "enabled": True, "marketplace_slug": "market"},
+        {"id": "market", "path": str(first), "source_type": "zapret_bundle", "enabled": True},
         {"id": "custom", "path": str(second), "source_type": "zapret_bundle", "enabled": True},
     ]
 
@@ -308,8 +291,8 @@ def test_marketplace_bundle_overlays_complete_zapret_runtime(tmp_path: Path) -> 
     process.storage = SimpleNamespace(paths=SimpleNamespace(runtime_dir=tmp_path / "runtime"))
     process._next_active_runtime_dir = lambda: active
     process._get_zapret_bundles = lambda enabled_only: [
-        {"id": "market", "path": mod, "marketplace": True},
-        {"id": "base", "path": base, "marketplace": False},
+        {"id": "market", "path": mod},
+        {"id": "base", "path": base},
     ]
     process._apply_selected_service_rules = lambda *_args, **_kwargs: None
     process._apply_user_collection_overrides = lambda *_args, **_kwargs: None

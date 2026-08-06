@@ -37,13 +37,6 @@ function createNativeBridge(native: NativeObject): ZapretHubBridge {
   };
 
     const ASYNC_RESULT = new Set([
-      "marketplace.installed",
-      "marketplace.image",
-      "marketplace.list",
-      "marketplace.get",
-      "marketplace.remove",
-      "marketplace.check-updates",
-      "vpn.import-subscription",
       "mods.delete",
       "mods2.delete",
     ]);
@@ -54,17 +47,17 @@ function createNativeBridge(native: NativeObject): ZapretHubBridge {
         const requestId =
           typeof crypto !== "undefined" && "randomUUID" in crypto
             ? crypto.randomUUID()
-            : `mp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            : `req-${Date.now()}-${Math.random().toString(16).slice(2)}`;
         return new Promise((resolve, reject) => {
           const timer = window.setTimeout(() => {
             off();
-            reject(new Error("Marketplace request timed out"));
+            reject(new Error("Command timed out"));
           }, 45000);
-          const off = subscribe("marketplace.result", (msg) => {
+          const off = subscribe("async.result", (msg) => {
             if (msg?.requestId !== requestId) return;
             window.clearTimeout(timer);
             off();
-            if (!msg.ok) reject(new Error(msg.error || "Marketplace request failed"));
+            if (!msg.ok) reject(new Error(msg.error || "Command failed"));
             else resolve(msg.value as never);
           });
           native.call(

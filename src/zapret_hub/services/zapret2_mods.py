@@ -169,7 +169,6 @@ class Zapret2ModsManager:
         author: str | None = None,
         version: str | None = None,
         icon_url: str | None = None,
-        marketplace_slug: str | None = None,
         source_url: str | None = None,
     ) -> InstalledMod:
         installed = self.list_installed()
@@ -184,8 +183,6 @@ class Zapret2ModsManager:
             entry.version = version
         if icon_url is not None:
             entry.icon_url = str(icon_url or "").strip()
-        if marketplace_slug is not None:
-            entry.marketplace_slug = str(marketplace_slug or "").strip()
         if source_url is not None:
             entry.source_url = str(source_url or "").strip()
         self._save(installed)

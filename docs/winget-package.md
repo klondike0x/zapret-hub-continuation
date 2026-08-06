@@ -8,4 +8,4 @@ For a local manifest test, extract `winget-manifests-<version>.zip`, enable loca
 winget install --manifest . --accept-package-agreements --accept-source-agreements
 ```
 
-Public installation with `winget install --id Goshkow.ZapretHub` becomes available after the generated manifest directory is accepted into [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs).
+Public installation becomes available after the generated manifest directory is accepted into [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs).

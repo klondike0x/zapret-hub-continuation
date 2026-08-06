@@ -15,7 +15,7 @@ import type { RuntimeId, Settings } from "@/bridge/types";
 import type { NavKey } from "@/components/shell/Sidebar";
 import { uiAssetUrl } from "@/lib/assets";
 
-export type SettingsTab = "app" | "zapret" | "zapret2" | "vpn" | "tg";
+export type SettingsTab = "app" | "zapret" | "zapret2";
 
 const THEMES = [
   { id: "oled", name: "Obsidian", swatch: ["#090a0d", "#151820", "#edf1f8"] },
@@ -155,10 +155,8 @@ export function SettingsModal({
     { key: "app", label: t("settings.tab.app") },
     { key: "zapret", label: "Zapret" },
     { key: "zapret2", label: "Zapret 2" },
-    { key: "vpn", label: "goshkow VPN" },
-    { key: "tg", label: "TG WS Proxy" },
   ];
-  const modeLabels: Record<RuntimeId, string> = { zapret: "Zapret", "goshkow-vpn": "goshkow VPN", zapret2: "Zapret2", none: L("Без основного компонента", "No primary component") };
+  const modeLabels: Record<RuntimeId, string> = { zapret: "Zapret", zapret2: "Zapret2", none: L("Без основного компонента", "No primary component") };
   const selectTab = (next: SettingsTab) => {
     const currentIndex = tabs.findIndex((item) => item.key === tab);
     const nextIndex = tabs.findIndex((item) => item.key === next);
@@ -538,65 +536,13 @@ export function SettingsModal({
           </Section>
         </>}
 
-        {tab === "vpn" && <Section title="goshkow VPN">
-          {!state.ui.hasValidVpnKey && <div className="mb-3 rounded-[12px] border border-line-1 bg-bg-2 p-3">
-            <div className="text-[12px] font-semibold text-fg">{L("goshkow VPN не подключён", "goshkow VPN is not connected")}</div>
-            <div className="mt-1 text-[10px] text-fg-dim">{L("Вставьте ключ подписки или получите 10 дней бесплатно.", "Paste a subscription key or get 10 free days.")}</div>
-            <button onClick={() => bridge.call("component.open-external", { id: "goshkow-vpn" })} className="mt-2 rounded-[9px] border border-line-1 px-3 py-1.5 text-[10px] text-fg hover:bg-bg-3">{L("Получить 10 дней бесплатно", "Get 10 days free")}</button>
-          </div>}
-          <Row label={L("Ключ / ссылка подписки", "Subscription key / URL")}>
-            <div className="flex gap-1.5">
-              <input value={settings.vpn.subscriptionUrl} onChange={(event) => patch({ vpn: { ...settings.vpn, subscriptionUrl: event.target.value } })} className="h-8 w-[178px] rounded-[10px] border border-line-1 bg-bg-1 px-2.5 text-[11px] text-fg outline-none transition-colors focus:border-line-2" />
-              <button onClick={async () => {
-                const value = (await bridge.call("clipboard.read", undefined)).trim();
-                if (value) patch({ vpn: { ...settings.vpn, subscriptionUrl: value } });
-               }} className="rounded-[9px] border border-line-1 bg-bg-2 px-2.5 text-[10px] text-fg transition-all duration-200 hover:bg-bg-3">{L("Вставить", "Paste")}</button>
-            </div>
-          </Row>
-          <Row label={L("Подписка", "Subscription")} hint={settings.vpn.subscriptionState === "valid" ? L("Подписка активна", "Subscription is valid") : L("Введите ссылку и примените настройки", "Enter the URL and apply settings")}>
-            <button onClick={() => bridge.call("vpn.refresh-subscription", undefined)} disabled={!settings.vpn.subscriptionUrl} className="rounded-[9px] border border-line-1 bg-bg-2 px-2.5 py-1.5 text-[10px] text-fg transition-all duration-200 hover:bg-bg-3 disabled:cursor-not-allowed disabled:opacity-40">{L("Обновить подписку", "Refresh subscription")}</button>
-          </Row>
-          <fieldset disabled={!state.ui.hasValidVpnKey} className={!state.ui.hasValidVpnKey ? "opacity-40" : ""}>
-          {settings.vpn.servers.length > 0 && <Row label={L("Локация", "Location")}><SelectField value={settings.vpn.selectedServerId} onChange={(value) => patch({ vpn: { ...settings.vpn, selectedServerId: value } })} options={[
-            { value: "auto", label: L("Автоматически", "Automatic") },
-            ...settings.vpn.servers.map((server) => ({ value: server.id, label: server.name })),
-          ]} /></Row>}
-          <Row label="TUN"><IosToggle on={settings.vpn.tunEnabled} onChange={(value) => patch({ vpn: { ...settings.vpn, tunEnabled: value } })} /></Row>
-          <Row label={L("Маршрутизация", "Routing")}><SelectField value={settings.vpn.routingMode} onChange={(value) => patch({ vpn: { ...settings.vpn, routingMode: value } })} options={[{ value: "global", label: L("Весь трафик", "Global") }, { value: "blacklist", label: L("По списку исключений", "Blacklist") }, { value: "whitelist", label: L("Только по списку", "Whitelist") }]} /></Row>
-          <Row label={L("Системный прокси", "System proxy")}><SelectField value={settings.vpn.systemProxyMode} onChange={(value) => patch({ vpn: { ...settings.vpn, systemProxyMode: value } })} options={[{ value: "pac", label: "PAC" }, { value: "set", label: L("Установить", "Set") }, { value: "clear", label: L("Очистить", "Clear") }, { value: "unchanged", label: L("Не менять", "Unchanged") }]} /></Row>
-          <Row label={settings.vpn.processesExcludeMode ? L("Исключать процессы", "Exclude processes") : L("Проксировать процессы", "Proxy processes")}><input value={settings.vpn.processes} onChange={(event) => patch({ vpn: { ...settings.vpn, processes: event.target.value } })} className={inputClass} placeholder="chrome.exe, telegram.exe" /></Row>
-          <Row label={L("Режим исключения процессов", "Process exclusion mode")}><IosToggle on={settings.vpn.processesExcludeMode} onChange={(value) => patch({ vpn: { ...settings.vpn, processesExcludeMode: value } })} /></Row>
-          </fieldset>
-        </Section>}
-
-        {tab === "tg" && <>
-          <Section title="TG WS Proxy">
-            <Row label={L("Хост прослушивания", "Listen host")}><input value={settings.tg.host} onChange={(event) => patch({ tg: { ...settings.tg, host: event.target.value } })} className={inputClass} /></Row>
-            <Row label={L("Порт", "Port")}><input type="number" value={settings.tg.port} onChange={(event) => patch({ tg: { ...settings.tg, port: Number(event.target.value) } })} className={inputClass} /></Row>
-            <Row label={L("Секрет", "Secret")}><input value={settings.tg.secret} onChange={(event) => patch({ tg: { ...settings.tg, secret: event.target.value } })} className={inputClass} /></Row>
-            <Row label="Media mode"><SelectField value={settings.tg.dcIp === "4:149.154.167.220" ? "media_fix" : settings.tg.dcIp ? "default" : "empty"} onChange={(value) => patch({ tg: { ...settings.tg, dcIp: value === "media_fix" ? "4:149.154.167.220" : value === "empty" ? "" : "2:149.154.167.220\n4:149.154.167.220" } })} options={[
-              { value: "default", label: L("Стандартный", "Default") },
-              { value: "media_fix", label: "Media fix" },
-              { value: "empty", label: L("Без DC override", "No DC override") },
-            ]} /></Row>
-            <Row label="DC IP"><textarea value={settings.tg.dcIp} onChange={(event) => patch({ tg: { ...settings.tg, dcIp: event.target.value } })} className="h-16 w-[250px] resize-none rounded-[10px] border border-line-1 bg-bg-1 p-2.5 text-[11px] text-fg outline-none focus:border-line-2" /></Row>
-          </Section>
-          <Section title="Cloudflare Proxy">
-            <Row label="CfProxy"><IosToggle on={settings.tg.cfProxyEnabled} onChange={(value) => patch({ tg: { ...settings.tg, cfProxyEnabled: value } })} /></Row>
-            <Row label={L("Приоритет CfProxy", "CfProxy priority")}><IosToggle on={settings.tg.cfProxyPriority} onChange={(value) => patch({ tg: { ...settings.tg, cfProxyPriority: value } })} /></Row>
-            <Row label={L("Домен CfProxy", "CfProxy domain")}><input value={settings.tg.cfProxyDomain} onChange={(event) => patch({ tg: { ...settings.tg, cfProxyDomain: event.target.value } })} className={inputClass} /></Row>
-            <Row label="Fake TLS domain"><input value={settings.tg.fakeTlsDomain} onChange={(event) => patch({ tg: { ...settings.tg, fakeTlsDomain: event.target.value } })} className={inputClass} /></Row>
-            <Row label={L("Буфер, КБ", "Buffer, KB")}><input type="number" value={settings.tg.bufferKb} onChange={(event) => patch({ tg: { ...settings.tg, bufferKb: Number(event.target.value) } })} className={inputClass} /></Row>
-            <Row label={L("Размер пула", "Pool size")}><input type="number" value={settings.tg.poolSize} onChange={(event) => patch({ tg: { ...settings.tg, poolSize: Number(event.target.value) } })} className={inputClass} /></Row>
-          </Section>
-        </>}
       </motion.div>
     </AnimatePresence>
   );
 
   const renderFooter = (className: string) => (
     <footer className={className}>
-      <div className="max-w-[470px] whitespace-pre-line text-[9px] leading-relaxed text-fg-mute">{L("Благодарности: Zapret и TG WS Proxy от Flowseal; Zapret 2 от bol-van.\nОригинальный Zapret Hub версия от goshkow.", "Credits: Zapret and TG WS Proxy by Flowseal; Zapret 2 by bol-van.\nOriginal Zapret Hub version by goshkow.")}</div>
+      <div className="max-w-[470px] whitespace-pre-line text-[9px] leading-relaxed text-fg-mute">{L("Благодарности: Zapret от Flowseal; Zapret 2 от bol-van.\nОригинальный Zapret Hub (goshkow, MIT).", "Credits: Zapret by Flowseal; Zapret 2 by bol-van.\nOriginal Zapret Hub by goshkow (MIT).")}</div>
       <div className="flex items-center gap-2">
         {!embedded && <button onClick={onClose} className="rounded-[9px] border border-line-1 bg-bg-1 px-3 py-1.5 text-[11px] text-fg-dim hover:bg-bg-3 hover:text-fg">{t("settings.close")}</button>}
         <button

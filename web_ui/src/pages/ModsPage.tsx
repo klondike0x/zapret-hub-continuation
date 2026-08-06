@@ -45,7 +45,7 @@ function ModEditor({ mod, runtime, onClose }: { mod: Mod; runtime: Runtime; onCl
 export function ModsPage({ nestedInSettings = false, onBack, runtime = "zapret" }: { nestedInSettings?: boolean; onBack?: () => void; runtime?: Runtime }) {
   const state = useAppState(); const bridge = useBridge(); const { t, locale } = useLocale(); const [importOpen, setImportOpen] = useState(false); const [createOpen, setCreateOpen] = useState(false); const [newName, setNewName] = useState(""); const [editing, setEditing] = useState<Mod | null>(null); const [deleting, setDeleting] = useState<Mod | null>(null); const scrollerRef = useRef<HTMLDivElement>(null); const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   if (!state) return null;
-  const isZapret2 = runtime === "zapret2"; const prefix = isZapret2 ? "mods2" : "mods"; const list = (isZapret2 ? state.mods2 || [] : state.mods).filter((mod) => mod.id !== "hub" && mod.name.trim().toLowerCase() !== "hub" && !String(mod.marketplaceSlug || "").trim());
+  const isZapret2 = runtime === "zapret2"; const prefix = isZapret2 ? "mods2" : "mods"; const list = (isZapret2 ? state.mods2 || [] : state.mods).filter((mod) => mod.id !== "hub" && mod.name.trim().toLowerCase() !== "hub");
   const doImport = (source: Mod["source"]) => {
     const ref = source === "github" ? window.prompt("Вставьте ссылку на GitHub-репозиторий")?.trim() : undefined;
     if (source === "github" && !ref) return;

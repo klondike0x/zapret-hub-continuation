@@ -83,21 +83,6 @@ _VPN_ADAPTER_PATTERNS = (
     "tun",
 )
 
-_GOSHKOW_VPN_UNHEALTHY_LOG_MARKERS = (
-    "timeout",
-    "timed out",
-    "i/o timeout",
-    "deadline exceeded",
-    "connection refused",
-    "connection reset",
-    "connection aborted",
-    "broken pipe",
-    "closed pipe",
-    "network is unreachable",
-    "no route to host",
-    "handshake failed",
-)
-
 _ZAPRET_DRIVER_SERVICE_NAMES = ("zapret", "WinDivert", "WinDivert14")
 _TORRENT_PROCESS_NAMES = (
     "qbittorrent.exe",
@@ -233,7 +218,6 @@ class ProcessManager:
         self._state_cache_at = 0.0
         self._hub_runtime_token = secrets.token_urlsafe(24)
         self._log_streams: dict[str, Any] = {}
-        self._telegram_proxy_launch_info: dict[str, Any] | None = None
         self._diagnostic_runtime_override = False
         self._diagnostic_abort = threading.Event()
         self._diagnostic_token = 0
@@ -286,8 +270,6 @@ class ProcessManager:
         for image in (
             "winws.exe",
             "winws2.exe",
-            "TgWsProxy_windows.exe",
-            "sing-box.exe",
         ):
             try:
                 if self._is_image_running(image):
@@ -329,33 +311,6 @@ class ProcessManager:
                     }
                 )
         return sorted(options, key=self._general_option_sort_key)
-
-    def prompt_telegram_proxy_link(self) -> None:
-        settings = self.settings.get()
-        secret = (settings.tg_proxy_secret or "").strip().lower()
-        if secret.startswith("dd") and len(secret) > 2:
-            secret = secret[2:]
-        if not secret:
-            secret = secrets.token_hex(16)
-            settings = self.settings.update(tg_proxy_secret=secret)
-        signature = (
-            f"{settings.tg_proxy_host}:{int(settings.tg_proxy_port)}:{secret}:"
-            f"{settings.tg_proxy_dc_ip}:{settings.tg_proxy_cfproxy_enabled}:"
-            f"{settings.tg_proxy_cfproxy_priority}:{settings.tg_proxy_cfproxy_domain}:"
-            f"{settings.tg_proxy_fake_tls_domain}:{settings.tg_proxy_buf_kb}:{settings.tg_proxy_pool_size}"
-        )
-        self._ensure_telegram_and_open_proxy_link(
-            host=settings.tg_proxy_host,
-            port=int(settings.tg_proxy_port),
-            secret=secret,
-        )
-        if signature != str(settings.tg_proxy_link_prompt_signature or ""):
-            self.settings.update(tg_proxy_link_prompt_signature=signature)
-
-    def consume_telegram_proxy_launch_info(self) -> dict[str, Any] | None:
-        info = self._telegram_proxy_launch_info
-        self._telegram_proxy_launch_info = None
-        return dict(info) if isinstance(info, dict) else None
 
     def abort_diagnostics(self, *, kill_winws: bool = True) -> None:
         """Stop general/settings diagnostics immediately.
@@ -454,29 +409,6 @@ class ProcessManager:
                     else:
                         state.status = "stopped"
                     state.pid = None
-            elif component.id == "tg-ws-proxy":
-                # Prefer owned Popen — never pay a socket timeout while Hub owns the process.
-                worker = self._processes.get(component.id)
-                if worker is not None and worker.poll() is None:
-                    state.status = "running"
-                    state.pid = worker.pid
-                elif self._is_port_listening(settings.tg_proxy_host, int(settings.tg_proxy_port)):
-                    state.status = "running"
-                    state.pid = None
-                elif str(getattr(self._states.get(component.id), "status", "") or "") == "starting":
-                    state.status = "starting"
-                    state.pid = None
-                else:
-                    state.status = "stopped"
-                    state.pid = None
-            elif component.id == "goshkow-vpn":
-                process = self._processes.get(component.id)
-                if process and process.poll() is None:
-                    state.status = "running"
-                    state.pid = process.pid
-                else:
-                    state.status = "stopped"
-                    state.pid = None
             elif component.id == "xbox-dns":
                 dns_state = self._read_xbox_dns_state()
                 state.status = "running" if bool(dns_state.get("active", False)) else "stopped"
@@ -539,18 +471,6 @@ class ProcessManager:
                 self._wait_for_image_exit("winws2.exe", attempts=8, delay=0.12)
             self._invalidate_state_cache()
             return
-        if runtime_id == "goshkow-vpn":
-            owned = self._processes.get("goshkow-vpn")
-            if owned is None or owned.poll() is not None:
-                return
-            self.logging.log("info", "Found running goshkow vpn; stopping before power-on")
-            try:
-                self.stop_component("goshkow-vpn")
-            except Exception:
-                pass
-            self._invalidate_state_cache()
-            return
-
     def start_component(self, component_id: str) -> ComponentState:
         with self._process_lock:
             return self._start_component_unlocked(component_id)
@@ -575,7 +495,6 @@ class ProcessManager:
                         selected=selected,
                     )
                     return state
-            self.stop_component("goshkow-vpn")
             self.stop_component("zapret2")
             state = self._start_zapret(component_id)
             self._invalidate_state_cache()
@@ -597,16 +516,7 @@ class ProcessManager:
                     )
                     return state
             self.stop_component("zapret")
-            self.stop_component("goshkow-vpn")
             state = self._start_zapret2(component_id)
-            self._invalidate_state_cache()
-            return state
-        if component.id == "tg-ws-proxy":
-            state = self._start_tg_ws_proxy(component_id)
-            self._invalidate_state_cache()
-            return state
-        if component.id == "goshkow-vpn":
-            state = self._start_goshkow_vpn(component_id)
             self._invalidate_state_cache()
             return state
         if component.id == "xbox-dns":
@@ -655,55 +565,6 @@ class ProcessManager:
             self._invalidate_state_cache()
             return state
 
-        if component_id == "tg-ws-proxy":
-            settings = self.settings.get()
-            process = self._processes.get(component_id)
-            if process and process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=4)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    try:
-                        process.wait(timeout=2)
-                    except subprocess.TimeoutExpired:
-                        pass
-            if process and process.pid:
-                self._run_quiet(["taskkill", "/PID", str(process.pid), "/F"])
-            self._processes.pop(component_id, None)
-            self._kill_image("TgWsProxy_windows.exe")
-            self._close_source_log_stream("tg-ws-proxy")
-            still_listening = self._is_port_listening(settings.tg_proxy_host, int(settings.tg_proxy_port))
-            state.status = "running" if still_listening else "stopped"
-            state.pid = None
-            state.last_error = "TG WS Proxy port is still busy." if still_listening else ""
-            self._states[component_id] = state
-            self.logging.log("info", "TG WS Proxy stopped")
-            self._invalidate_state_cache()
-            return state
-        if component_id == "goshkow-vpn":
-            process = self._processes.get(component_id)
-            if process and process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    try:
-                        process.wait(timeout=2)
-                    except subprocess.TimeoutExpired:
-                        pass
-            if process and process.pid:
-                self._run_quiet(["taskkill", "/PID", str(process.pid), "/F", "/T"])
-            self._processes.pop(component_id, None)
-            self._close_source_log_stream(component_id)
-            state.status = "stopped"
-            state.pid = None
-            state.last_error = ""
-            self._states[component_id] = state
-            self.logging.log("info", "goshkow vpn stopped")
-            self._invalidate_state_cache()
-            return state
         if component_id == "zapret2":
             process = self._processes.get(component_id)
             if process and process.poll() is None:
@@ -757,7 +618,7 @@ class ProcessManager:
         mode = str(self.settings.get().selected_runtime_mode or "zapret")
         if mode == "none":
             return set()
-        if mode in {"zapret", "zapret2", "goshkow-vpn"}:
+        if mode in {"zapret", "zapret2"}:
             return {mode}
         return {"zapret"}
 
@@ -768,9 +629,9 @@ class ProcessManager:
             return False
         if require_autostart_flag and not component.autostart:
             return False
-        # Bypass trio is mutually exclusive — never start VPN because it stayed "enabled"
-        # while the user selected Zapret (that flipped UI mode to goshkow-vpn).
-        if component_id in {"zapret", "zapret2", "goshkow-vpn"}:
+        # Bypass duo is mutually exclusive — never start Zapret2 because it stayed "enabled"
+        # while the user selected Zapret.
+        if component_id in {"zapret", "zapret2"}:
             return component_id in self._bypass_ids_allowed_for_autostart()
         return True
 
@@ -1302,10 +1163,6 @@ foreach ($adapter in @($payload.adapters)) {
             # Explicit user start — don't stay blocked by a stale diagnostic abort.
             self._diagnostic_abort.clear()
         # Never rewrite Quick Access mode here — Auto/start must not flip Zapret↔Zapret2.
-        try:
-            self.settings.update(goshkow_vpn_pending_start=False)
-        except Exception:
-            pass
         # Always clear existing winws copies, then start a Hub-owned instance.
         # When already running, prefer seamless cutover (stage B → start new → kill old).
         if self._is_image_running("winws.exe") and not self._diagnostic_runtime_override:
@@ -1454,10 +1311,6 @@ foreach ($adapter in @($payload.adapters)) {
         return state
 
     def _start_zapret2(self, component_id: str) -> ComponentState:
-        try:
-            self.settings.update(goshkow_vpn_pending_start=False)
-        except Exception:
-            pass
         if self._is_image_running("winws2.exe"):
             self.logging.log("info", "Stopping existing winws2 copies before zapret2 start")
         self.stop_component(component_id)
@@ -1822,542 +1675,6 @@ foreach ($adapter in @($payload.adapters)) {
             return bool(ctypes.windll.shell32.IsUserAnAdmin())
         except Exception:
             return False
-
-    def _download_latest_v2rayn_archive(self) -> Path:
-        api_url = "https://api.github.com/repos/2dust/v2rayN/releases/latest"
-        release = self.github.github_json(api_url, timeout=20, purpose="v2rayn-release-metadata")
-        assets = release.get("assets", []) if isinstance(release, dict) else []
-        selected_url = ""
-        selected_name = ""
-        for marker in ("windows-64-desktop", "windows-64"):
-            for asset in assets:
-                if not isinstance(asset, dict):
-                    continue
-                name = str(asset.get("name", "") or "")
-                url = str(asset.get("browser_download_url", "") or "")
-                if url and name.lower().endswith(".zip") and marker in name.lower():
-                    selected_url = url
-                    selected_name = name
-                    break
-            if selected_url:
-                break
-        if not selected_url:
-            raise FileNotFoundError("В последнем релизе v2rayN не найден Windows x64 архив.")
-        target = self.storage.paths.cache_dir / selected_name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        urllib.request.urlretrieve(selected_url, target)
-        return target
-
-    def _start_goshkow_vpn(self, component_id: str) -> ComponentState:
-        current = self._processes.get(component_id)
-        if current and current.poll() is None:
-            existing = self._states.get(component_id, ComponentState(component_id=component_id, status="running", pid=current.pid))
-            existing.status = "running"
-            existing.pid = current.pid
-            return existing
-        state = ComponentState(component_id=component_id)
-        vpn_state = self.storage.read_json(self.storage.paths.data_dir / "goshkow_vpn.json", default={}) or {}
-        if not isinstance(vpn_state, dict) or str(vpn_state.get("subscription_state", "") or "") != "valid":
-            state.status = "error"
-            state.last_error = "Сначала добавьте валидную подписку goshkow vpn."
-            self._states[component_id] = state
-            return state
-        selected_server = self._selected_goshkow_vpn_server(vpn_state)
-        if selected_server is None:
-            state.status = "error"
-            state.last_error = "Не выбрана локация goshkow vpn."
-            self._states[component_id] = state
-            return state
-        saved_flag = bool(getattr(self.settings.get(), "zapret_was_running_before_goshkow_vpn", False))
-        zapret_running = bool(self._is_image_running("winws.exe") or saved_flag)
-        try:
-            config_path = self._write_goshkow_vpn_runtime_config(vpn_state, selected_server)
-            core = self._ensure_goshkow_vpn_core()
-            self.logging.log(
-                "info",
-                "goshkow vpn launching",
-                component_id=component_id,
-                selected_server=str(selected_server.get("name", "") or selected_server.get("id", "") or ""),
-                tun_enabled=bool(vpn_state.get("tun_enabled", True)),
-                routing_mode=str(vpn_state.get("routing_mode", "global") or "global"),
-                system_proxy_mode=str(vpn_state.get("system_proxy_mode", "pac") or "pac"),
-                processes=[
-                    item.strip()
-                    for item in str(vpn_state.get("processes", "") or "").split(",")
-                    if item.strip()
-                ],
-                config=str(config_path),
-            )
-        except Exception as error:
-            state.status = "error"
-            state.last_error = str(error)
-            self._states[component_id] = state
-            self.logging.log("error", "goshkow vpn failed to prepare", error=str(error))
-            return state
-        if sys.platform.startswith("win") and not self._is_admin_windows():
-            self.settings.update(
-                selected_runtime_mode="goshkow-vpn",
-                zapret_was_running_before_goshkow_vpn=zapret_running,
-            )
-            self.settings.update(goshkow_vpn_pending_start=True)
-            state.status = "error"
-            state.last_error = "Для запуска TUN-режима нужны права администратора. Перезапустите приложение от имени администратора."
-            self._states[component_id] = state
-            return state
-        try:
-            self.settings.update(
-                selected_runtime_mode="goshkow-vpn",
-                zapret_was_running_before_goshkow_vpn=zapret_running,
-                goshkow_vpn_pending_start=False,
-            )
-            if zapret_running:
-                self.stop_component("zapret")
-            process = subprocess.Popen(
-                [str(core), "run", "-c", str(config_path)],
-                cwd=str(core.parent),
-                creationflags=self._creationflags,
-                startupinfo=self._startupinfo,
-                stdout=self._open_source_log_stream(component_id),
-                stderr=subprocess.STDOUT,
-            )
-            if self._job:
-                self._job.assign_pid(process.pid)
-            # Brief settle only — do not block UI for a multi-second health wait.
-            time.sleep(0.2)
-            if process.poll() is not None:
-                # Flush sing-box output before parsing it so real TUN errors are retained.
-                self._close_source_log_stream(component_id)
-                log_error = self._recent_source_log_error(component_id)
-                state.status = "error"
-                state.pid = None
-                state.last_error = log_error or "goshkow vpn завершился сразу после запуска. Проверьте конфигурацию и права администратора."
-                self._states[component_id] = state
-                self.logging.log("error", "goshkow vpn exited early", error=state.last_error, config=str(config_path))
-                return state
-            self._processes[component_id] = process
-            state.status = "running"
-            state.pid = process.pid
-            state.last_error = ""
-            self._states[component_id] = state
-            self._invalidate_state_cache()
-            self.logging.log("info", "goshkow vpn started", pid=process.pid, config=str(config_path))
-            self._schedule_bypass_start_confirm(component_id, process)
-            if str(vpn_state.get("selected_server_id", "") or "") == "auto":
-                self._start_goshkow_vpn_auto_monitor(component_id, process, str(selected_server.get("id", "") or ""))
-            return state
-        except Exception as error:
-            state.status = "error"
-            state.last_error = str(error)
-            self._states[component_id] = state
-            self.logging.log("error", "goshkow vpn failed to start", error=str(error))
-            return state
-
-    def _selected_goshkow_vpn_server(self, vpn_state: dict[str, Any]) -> dict[str, Any] | None:
-        selected_id = str(vpn_state.get("selected_server_id", "") or "")
-        if selected_id == "auto":
-            excluded = {str(item) for item in list(vpn_state.get("auto_excluded_server_ids", []) or []) if str(item)}
-            return self._select_fastest_goshkow_vpn_server(vpn_state, excluded)
-        for item in vpn_state.get("servers", []) or []:
-            if isinstance(item, dict) and str(item.get("id", "")) == selected_id:
-                return dict(item)
-        return None
-
-    def _select_fastest_goshkow_vpn_server(self, vpn_state: dict[str, Any], exclude_ids: set[str] | None = None) -> dict[str, Any] | None:
-        servers = [dict(item) for item in vpn_state.get("servers", []) or [] if isinstance(item, dict)]
-        blocked = set(exclude_ids or set())
-        candidates = [item for item in servers if str(item.get("id", "") or "") not in blocked] or servers
-        if not candidates:
-            return None
-        results: list[tuple[float, dict[str, Any]]] = []
-        with ThreadPoolExecutor(max_workers=min(8, len(candidates))) as executor:
-            future_map = {executor.submit(self._probe_goshkow_vpn_server, item): item for item in candidates}
-            for future in as_completed(future_map):
-                server = future_map[future]
-                try:
-                    latency = float(future.result())
-                except Exception:
-                    latency = 999999.0
-                results.append((latency, server))
-        results.sort(key=lambda item: item[0])
-        selected = dict(results[0][1])
-        self._save_goshkow_vpn_runtime_choice(selected)
-        return selected
-
-    def _probe_goshkow_vpn_server(self, server: dict[str, Any]) -> float:
-        parsed = urllib.parse.urlparse(str(server.get("raw", "") or ""))
-        host = parsed.hostname or str(server.get("host", "") or "")
-        port = int(parsed.port or 443)
-        if not host:
-            return 999999.0
-        started = time.perf_counter()
-        try:
-            with socket.create_connection((host, port), timeout=1.2):
-                return max(0.001, time.perf_counter() - started)
-        except Exception:
-            return 999999.0
-
-    def _save_goshkow_vpn_runtime_choice(self, server: dict[str, Any]) -> None:
-        state_path = self.storage.paths.data_dir / "goshkow_vpn.json"
-        current = self.storage.read_json(state_path, default={}) or {}
-        if not isinstance(current, dict):
-            current = {}
-        current["last_auto_server_id"] = str(server.get("id", "") or "")
-        current["last_auto_server_name"] = str(server.get("name", "") or server.get("host", "") or "")
-        current["last_auto_selected_at"] = datetime.utcnow().isoformat()
-        self.storage.write_json(state_path, current)
-
-    def _start_goshkow_vpn_auto_monitor(self, component_id: str, process: subprocess.Popen[Any], server_id: str) -> None:
-        def _process_monitor() -> None:
-            try:
-                process.wait()
-            except Exception:
-                return
-            self._switch_goshkow_vpn_auto_location(component_id, process, server_id, reason="process-exited")
-
-        def _health_monitor() -> None:
-            log_path = Path(self.logging.source_log_path(component_id))
-            log_position = 0
-            try:
-                if log_path.exists():
-                    log_position = log_path.stat().st_size
-            except Exception:
-                log_position = 0
-            unhealthy_hits: list[float] = []
-            failed_probes = 0
-            last_probe_at = 0.0
-            while process.poll() is None:
-                time.sleep(1.2)
-                with self._process_lock:
-                    if self._processes.get(component_id) is not process:
-                        return
-                now = time.monotonic()
-                if now - last_probe_at >= 8.0:
-                    last_probe_at = now
-                    vpn_state = self.storage.read_json(self.storage.paths.data_dir / "goshkow_vpn.json", default={}) or {}
-                    if not isinstance(vpn_state, dict) or str(vpn_state.get("selected_server_id", "") or "") != "auto":
-                        return
-                    current_server = None
-                    for item in list(vpn_state.get("servers", []) or []):
-                        if isinstance(item, dict) and str(item.get("id", "") or "") == server_id:
-                            current_server = dict(item)
-                            break
-                    if current_server is not None and self._probe_goshkow_vpn_server(current_server) >= 999999.0:
-                        failed_probes += 1
-                    else:
-                        failed_probes = 0
-                    if failed_probes >= 3:
-                        self._switch_goshkow_vpn_auto_location(component_id, process, server_id, reason="server-probe-timeouts")
-                        return
-                chunk = ""
-                try:
-                    if log_path.exists():
-                        with log_path.open("r", encoding="utf-8", errors="ignore") as handle:
-                            handle.seek(log_position)
-                            chunk = handle.read()
-                            log_position = handle.tell()
-                except Exception:
-                    chunk = ""
-                if not chunk:
-                    continue
-                for raw_line in chunk.splitlines():
-                    if self._goshkow_vpn_log_line_is_unhealthy(raw_line):
-                        unhealthy_hits.append(now)
-                if unhealthy_hits:
-                    cutoff = now - 28.0
-                    unhealthy_hits = [item for item in unhealthy_hits if item >= cutoff]
-                if len(unhealthy_hits) >= 6:
-                    self._switch_goshkow_vpn_auto_location(component_id, process, server_id, reason="traffic-timeouts")
-                    return
-
-        threading.Thread(target=_process_monitor, daemon=True).start()
-        threading.Thread(target=_health_monitor, daemon=True).start()
-
-    def _goshkow_vpn_log_line_is_unhealthy(self, line: str) -> bool:
-        lowered = str(line or "").lower()
-        if not lowered or "bittorrent" in lowered:
-            return False
-        if "outbound/direct" in lowered and "dns:" not in lowered:
-            return False
-        return any(marker in lowered for marker in _GOSHKOW_VPN_UNHEALTHY_LOG_MARKERS)
-
-    def _switch_goshkow_vpn_auto_location(
-        self,
-        component_id: str,
-        process: subprocess.Popen[Any],
-        failed_server_id: str,
-        *,
-        reason: str,
-    ) -> bool:
-        with self._process_lock:
-            if self._processes.get(component_id) is not process:
-                return False
-            vpn_state = self.storage.read_json(self.storage.paths.data_dir / "goshkow_vpn.json", default={}) or {}
-            if not isinstance(vpn_state, dict) or str(vpn_state.get("selected_server_id", "") or "") != "auto":
-                self._invalidate_state_cache()
-                return False
-            excluded = {
-                failed_server_id,
-                *[str(item) for item in list(vpn_state.get("auto_excluded_server_ids", []) or []) if str(item)],
-            }
-        replacement = self._select_fastest_goshkow_vpn_server(vpn_state, excluded)
-        if replacement is None:
-            self._invalidate_state_cache()
-            return False
-        latest_state = self.storage.read_json(self.storage.paths.data_dir / "goshkow_vpn.json", default={}) or {}
-        if not isinstance(latest_state, dict):
-            latest_state = {}
-        latest_state["auto_excluded_server_ids"] = sorted(excluded)
-        latest_state["last_auto_server_id"] = str(replacement.get("id", "") or "")
-        latest_state["last_auto_server_name"] = str(replacement.get("name", "") or replacement.get("host", "") or "")
-        latest_state["last_auto_selected_at"] = datetime.utcnow().isoformat()
-        self.storage.write_json(self.storage.paths.data_dir / "goshkow_vpn.json", latest_state)
-        self.logging.log(
-            "warning",
-            "goshkow vpn auto location failed, trying another one",
-            failed_server_id=failed_server_id,
-            next_server=str(replacement.get("name", "") or replacement.get("id", "")),
-            reason=reason,
-        )
-        with self._process_lock:
-            if self._processes.get(component_id) is not process:
-                return False
-            self._stop_component_unlocked(component_id)
-            self._start_goshkow_vpn(component_id)
-            self._invalidate_state_cache()
-        return True
-
-    def _goshkow_vpn_runtime_root(self) -> Path:
-        return self.storage.paths.runtime_dir / "v2rayN"
-
-    def _ensure_goshkow_vpn_core(self) -> Path:
-        runtime_root = self._goshkow_vpn_runtime_root()
-        for candidate in runtime_root.rglob("sing-box.exe"):
-            if candidate.name.lower() == "sing-box.exe":
-                return candidate
-        runtime_root.mkdir(parents=True, exist_ok=True)
-        archive = self._download_latest_v2rayn_archive()
-        with zipfile.ZipFile(archive) as bundle:
-            bundle.extractall(runtime_root)
-        for candidate in runtime_root.rglob("sing-box.exe"):
-            if candidate.name.lower() == "sing-box.exe":
-                return candidate
-        raise FileNotFoundError("В runtime v2rayN не найден sing-box.exe.")
-
-    def _write_goshkow_vpn_runtime_config(self, vpn_state: dict[str, Any], selected_server: dict[str, Any]) -> Path:
-        runtime_root = self._goshkow_vpn_runtime_root()
-        config_dir = runtime_root / "goshkow-vpn"
-        config_dir.mkdir(parents=True, exist_ok=True)
-        config_path = config_dir / "config.json"
-        config = self._build_goshkow_vpn_config(vpn_state, selected_server)
-        config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
-        return config_path
-
-    def _build_goshkow_vpn_config(self, vpn_state: dict[str, Any], selected_server: dict[str, Any]) -> dict[str, Any]:
-        endpoint = self._parse_goshkow_vpn_endpoint(selected_server)
-        if endpoint is None:
-            raise ValueError("Формат выбранной локации пока не поддерживается во встроенном TUN-режиме.")
-        processes = [item.strip() for item in str(vpn_state.get("processes", "") or "").split(",") if item.strip()]
-        processes_exclude_mode = bool(vpn_state.get("processes_exclude_mode", False))
-        rules_mode = str(vpn_state.get("rules_mode", "blacklist") or "blacklist")
-        routing_mode = str(vpn_state.get("routing_mode", "global") or "global")
-        tun_enabled = bool(vpn_state.get("tun_enabled", True))
-        route_final = "proxy"
-        route_rules: list[dict[str, Any]] = [
-            {"action": "sniff"},
-            {"action": "route", "protocol": "bittorrent", "outbound": "direct"},
-            {"action": "route", "process_name": list(_TORRENT_PROCESS_NAMES), "outbound": "direct"},
-            {"action": "hijack-dns", "port": 53, "network": ["tcp", "udp"]},
-            {"protocol": "dns", "action": "hijack-dns"},
-            {"action": "route", "ip_is_private": True, "outbound": "direct"},
-        ]
-        if processes:
-            if processes_exclude_mode:
-                route_rules.append({"action": "route", "process_name": processes, "outbound": "direct"})
-                route_final = "proxy"
-            else:
-                route_rules.append({"action": "route", "process_name": processes, "outbound": "proxy"})
-                route_final = "direct"
-        inbound: dict[str, Any]
-        if tun_enabled:
-            inbound = {
-                "type": "tun",
-                "tag": "tun-in",
-                "interface_name": "zapret_hub_tun",
-                "address": ["172.18.0.1/30"],
-                "mtu": 9000,
-                "auto_route": True,
-                "strict_route": True,
-                "stack": "system",
-            }
-        else:
-            inbound = {
-                "type": "mixed",
-                "tag": "mixed-in",
-                "listen": "127.0.0.1",
-                "listen_port": 10808,
-            }
-
-        config: dict[str, Any] = {
-            "log": {"level": "info"},
-            "dns": {
-                "strategy": "ipv4_only",
-                "independent_cache": True,
-                "servers": [
-                    {"tag": "local", "type": "local", "prefer_go": True},
-                    {
-                        "tag": "remote",
-                        "type": "https",
-                        "server": "1.1.1.1",
-                        "server_port": 443,
-                        "path": "/dns-query",
-                        "connect_timeout": "4s",
-                        "detour": "proxy",
-                        "tls": {"enabled": True, "server_name": "cloudflare-dns.com"},
-                    },
-                ],
-                "final": "remote",
-            },
-            "inbounds": [inbound],
-            "outbounds": [
-                endpoint,
-                {"type": "direct", "tag": "direct"},
-                {"type": "block", "tag": "block"},
-            ],
-            "route": {
-                "auto_detect_interface": True,
-                "default_domain_resolver": {"server": "local", "strategy": "ipv4_only"},
-                "final": route_final,
-                "rules": route_rules,
-            },
-        }
-        if str(vpn_state.get("system_proxy_mode", "clear") or "clear") == "set":
-            config["experimental"] = {"clash_api": {"external_controller": "127.0.0.1:9090"}}
-        return config
-
-    def _parse_goshkow_vpn_endpoint(self, selected_server: dict[str, Any]) -> dict[str, Any] | None:
-        raw = str(selected_server.get("raw", "") or "").strip()
-        if not raw:
-            return None
-        parsed = urllib.parse.urlparse(raw)
-        scheme = parsed.scheme.lower()
-        query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
-        host = parsed.hostname or str(selected_server.get("host", "") or "")
-        port = int(parsed.port or 443)
-        if scheme == "vless":
-            uuid = urllib.parse.unquote(parsed.username or "")
-            if not uuid or not host:
-                return None
-            transport = str(query.get("type", ["tcp"])[0] or "tcp").lower()
-            security = str(query.get("security", [""])[0] or "").lower()
-            service_name = str(query.get("serviceName", query.get("service_name", [""]))[0] or "").strip()
-            server_name = str(query.get("sni", query.get("servername", [host]))[0] or host).strip()
-            flow = str(query.get("flow", [""])[0] or "").strip()
-            alpn = [item for item in str(query.get("alpn", [""])[0] or "").split(",") if item]
-            tls: dict[str, Any] = {}
-            if security:
-                tls["enabled"] = True
-                tls["server_name"] = server_name or host
-                if alpn:
-                    tls["alpn"] = alpn
-                tls["insecure"] = str(query.get("allowInsecure", ["0"])[0]).lower() in {"1", "true", "yes"}
-                fingerprint = str(query.get("fp", [""])[0] or "").strip()
-                if fingerprint:
-                    tls["utls"] = {"enabled": True, "fingerprint": fingerprint}
-                if security == "reality":
-                    public_key = str(query.get("pbk", [""])[0] or "").strip()
-                    short_id = str(query.get("sid", [""])[0] or "").strip()
-                    if public_key:
-                        tls["reality"] = {"enabled": True, "public_key": public_key, "short_id": short_id}
-            outbound: dict[str, Any] = {
-                "type": "vless",
-                "tag": "proxy",
-                "server": host,
-                "server_port": port,
-                "uuid": uuid,
-            }
-            if not self._looks_like_ip_address(host):
-                outbound["domain_resolver"] = "local"
-            if flow:
-                outbound["flow"] = flow
-            if tls:
-                outbound["tls"] = tls
-            if transport == "grpc":
-                outbound["transport"] = {"type": "grpc", "service_name": service_name or "goshkow-vpn"}
-            return outbound
-        if scheme == "trojan":
-            password = urllib.parse.unquote(parsed.username or "")
-            if not password or not host:
-                return None
-            outbound = {
-                "type": "trojan",
-                "tag": "proxy",
-                "server": host,
-                "server_port": port,
-                "password": password,
-                "tls": {
-                    "enabled": True,
-                    "server_name": str(query.get("sni", [host])[0] or host),
-                    "insecure": str(query.get("allowInsecure", ["0"])[0]).lower() in {"1", "true", "yes"},
-                },
-            }
-            if not self._looks_like_ip_address(host):
-                outbound["domain_resolver"] = "local"
-            if str(query.get("security", ["tls"])[0] or "tls").lower() == "reality":
-                public_key = str(query.get("pbk", [""])[0] or "").strip()
-                short_id = str(query.get("sid", [""])[0] or "").strip()
-                if public_key:
-                    outbound["tls"]["reality"] = {"enabled": True, "public_key": public_key, "short_id": short_id}
-            return outbound
-        if scheme in {"ss", "shadowsocks"}:
-            method = str(query.get("method", [""])[0] or "").strip()
-            password = urllib.parse.unquote(parsed.password or "")
-            if not method or not password or not host:
-                return None
-            return {
-                "type": "shadowsocks",
-                "tag": "proxy",
-                "server": host,
-                "server_port": port,
-                "method": method,
-                "password": password,
-                **({"domain_resolver": "local"} if not self._looks_like_ip_address(host) else {}),
-            }
-        if scheme in {"hysteria2", "hy2"}:
-            password = urllib.parse.unquote(parsed.username or "")
-            if not password or not host:
-                return None
-            return {
-                "type": "hysteria2",
-                "tag": "proxy",
-                "server": host,
-                "server_port": port,
-                "password": password,
-                **({"domain_resolver": "local"} if not self._looks_like_ip_address(host) else {}),
-                "tls": {
-                    "enabled": True,
-                    "server_name": str(query.get("sni", [host])[0] or host),
-                    "insecure": str(query.get("insecure", ["0"])[0]).lower() in {"1", "true", "yes"},
-                },
-            }
-        if scheme == "vmess":
-            vmess = self._parse_vmess(raw)
-            if vmess is None:
-                return None
-            host = vmess.get("host", host)
-            uuid = vmess.get("uuid", "")
-            if not host or not uuid:
-                return None
-            outbound = {
-                "type": "vmess",
-                "tag": "proxy",
-                "server": host,
-                "server_port": int(vmess.get("port", port) or port),
-                "uuid": uuid,
-            }
-            if not self._looks_like_ip_address(host):
-                outbound["domain_resolver"] = "local"
-            return outbound
-        return None
 
     def _parse_vmess(self, raw: str) -> dict[str, str] | None:
         try:
@@ -2825,101 +2142,6 @@ Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
         elif game_flag.exists():
             game_flag.unlink(missing_ok=True)
 
-    def _start_tg_ws_proxy(self, component_id: str) -> ComponentState:
-        # перезапуск без споров со старыми процессами
-        self.stop_component(component_id)
-
-        settings = self.settings.get()
-        secret = (settings.tg_proxy_secret or "").strip().lower()
-        if secret.startswith("dd") and len(secret) > 2:
-            secret = secret[2:]
-        if not secret:
-            secret = secrets.token_hex(16)
-        if secret != settings.tg_proxy_secret:
-            settings = self.settings.update(tg_proxy_secret=secret)
-        # старый процесс мог остаться в трее
-        self._kill_image("TgWsProxy_windows.exe")
-        listen_host = settings.tg_proxy_host
-        listen_port = int(settings.tg_proxy_port)
-        self._port_listening_cache.pop((str(listen_host or ""), int(listen_port)), None)
-        if self._is_port_listening(listen_host, listen_port):
-            state = ComponentState(component_id=component_id, status="running", pid=None, last_error="")
-            self._states[component_id] = state
-            self._invalidate_state_cache()
-            self.logging.log("info", "TG WS Proxy already listening", host=listen_host, port=listen_port)
-            return state
-        try:
-            (self.storage.paths.logs_dir / "tg_worker_error.log").unlink(missing_ok=True)
-        except Exception:
-            pass
-        command = self._build_worker_command(
-            "tg-ws-proxy",
-            tg_host=settings.tg_proxy_host,
-            tg_port=int(settings.tg_proxy_port),
-            tg_secret=secret,
-            tg_dc_ip=self._parse_tg_dc_ip_settings(settings.tg_proxy_dc_ip),
-            tg_cfproxy_enabled=bool(settings.tg_proxy_cfproxy_enabled),
-            tg_cfproxy_priority=bool(settings.tg_proxy_cfproxy_priority),
-            tg_cfproxy_domain=settings.tg_proxy_cfproxy_domain,
-            tg_fake_tls_domain=settings.tg_proxy_fake_tls_domain,
-            tg_buf_kb=int(settings.tg_proxy_buf_kb or 256),
-            tg_pool_size=int(settings.tg_proxy_pool_size or 4),
-        )
-        process = subprocess.Popen(
-            command,
-            cwd=str(self.storage.paths.install_root),
-            creationflags=self._creationflags,
-            startupinfo=self._startupinfo,
-            env=self._build_worker_env(),
-            stdout=self._open_source_log_stream("tg-ws-proxy"),
-            stderr=subprocess.STDOUT,
-        )
-        # Assign to kill-on-close job immediately (before listen wait).
-        if self._job and process.pid:
-            if not self._job.assign_pid(process.pid):
-                self.logging.log("warning", "Failed to assign TG WS Proxy to job object", pid=process.pid)
-        ready = False
-        for _ in range(16):
-            if process.poll() is not None:
-                break
-            self._port_listening_cache.pop((str(listen_host or ""), int(listen_port)), None)
-            if self._is_port_listening(listen_host, listen_port):
-                ready = True
-                break
-            time.sleep(0.35)
-        if not ready:
-            error_hint = "TG WS Proxy worker did not open listening port."
-            worker_error_log = self.storage.paths.logs_dir / "tg_worker_error.log"
-            if worker_error_log.exists():
-                error_hint = worker_error_log.read_text(encoding="utf-8")[-1000:]
-            try:
-                if process.poll() is None:
-                    process.kill()
-            except Exception:
-                pass
-            try:
-                self._kill_image("TgWsProxy_windows.exe")
-            except Exception:
-                pass
-            state = ComponentState(
-                component_id=component_id,
-                status="error",
-                last_error=error_hint,
-            )
-            self._states[component_id] = state
-            self._invalidate_state_cache()
-            self.logging.log("error", "TG WS Proxy worker failed to start", error=error_hint)
-            return state
-        state = ComponentState(component_id=component_id, status="running", pid=process.pid)
-        self._processes[component_id] = process
-        self._states[component_id] = state
-        self._port_listening_cache[(str(listen_host or ""), int(listen_port))] = (time.time(), True)
-        self._invalidate_state_cache()
-        self.logging.log("info", "TG WS Proxy worker started", pid=process.pid)
-        if not str(settings.tg_proxy_link_prompt_signature or "").strip():
-            self.prompt_telegram_proxy_link()
-        return state
-
     def _build_worker_command(self, worker: str, **kwargs: Any) -> list[str]:
         cmd: list[str]
         if is_packaged_runtime():
@@ -2935,42 +2157,6 @@ Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
                 continue
             cmd.extend([option, str(value)])
         return cmd
-
-    def _parse_tg_dc_ip_settings(self, value: str) -> list[str]:
-        result: list[str] = []
-        for raw in re.split(r"[\n,;]+", str(value or "")):
-            item = raw.strip()
-            if item:
-                result.append(item)
-        if not result:
-            # без этого tg-ws-proxy сам подставляет дефолтные dc
-            return ["__empty__"]
-        return result
-
-    def _build_worker_env(self) -> dict[str, str]:
-        env = os.environ.copy()
-        if not is_packaged_runtime():
-            src_root = str(self.storage.paths.install_root / "src")
-            current = str(env.get("PYTHONPATH", "") or "")
-            parts = [item for item in current.split(os.pathsep) if item]
-            if src_root not in parts:
-                parts.insert(0, src_root)
-            env["PYTHONPATH"] = os.pathsep.join(parts)
-        return env
-
-    def _worker_python_executable(self) -> str:
-        if is_packaged_runtime():
-            return sys.executable
-        install_root = self.storage.paths.install_root
-        candidates = [
-            install_root / ".venv" / "Scripts" / "python.exe",
-            install_root / ".venv" / "bin" / "python",
-            Path(sys.executable),
-        ]
-        for candidate in candidates:
-            if candidate.exists():
-                return str(candidate)
-        return sys.executable
 
     def _get_zapret_bundles(self, enabled_only: bool, *, include_hidden_generals: bool = False) -> list[dict[str, Any]]:
         bundles: list[dict[str, Any]] = []
@@ -2998,12 +2184,11 @@ Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
                 "id": mod_id,
                 "title": title,
                 "path": path,
-                "marketplace": bool(str(raw.get("marketplace_slug") or "").strip()),
             })
         if include_hidden_generals and unified_root.exists():
-            bundles.insert(0, {"id": "unified-general", "title": "Hub", "path": unified_root, "marketplace": False})
+            bundles.insert(0, {"id": "unified-general", "title": "Hub", "path": unified_root})
         if base.exists():
-            bundles.append({"id": "base", "title": "", "path": base, "marketplace": False})
+            bundles.append({"id": "base", "title": "", "path": base})
         return bundles
 
     def _general_option_sort_key(self, item: dict[str, str]) -> tuple[int, int, str]:
@@ -3124,18 +2309,10 @@ Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
 
         Never stop A until B is confirmed running. If B cannot start, keep A.
         """
-        try:
-            self.settings.update(goshkow_vpn_pending_start=False)
-        except Exception:
-            pass
         return self._cutover_to_zapret_runtime(Path(active_root))
 
     def seamless_restart_zapret(self) -> ComponentState:
         """Rebuild candidate runtime while live, then cut over with minimal downtime."""
-        try:
-            self.settings.update(goshkow_vpn_pending_start=False)
-        except Exception:
-            pass
         slot_b = self.stage_zapret_candidate_runtime()
         return self._cutover_to_zapret_runtime(slot_b)
 
@@ -3267,10 +2444,6 @@ Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
         """Start winws from an already-materialized runtime (no rebuild / no A wipe)."""
         component_id = "zapret"
         active_root = Path(active_root)
-        try:
-            self.settings.update(goshkow_vpn_pending_start=False)
-        except Exception:
-            pass
         if not assume_clean:
             if self._is_image_running("winws.exe"):
                 self._soft_stop_zapret_image()
@@ -4290,7 +3463,7 @@ Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
             selected_runtime_mode="zapret",
         )
         try:
-            # start_component("zapret") stops zapret2/vpn — intentional for the brief window.
+            # start_component("zapret") stops zapret2 — intentional for the brief window.
             self.start_component("zapret")
         except Exception as error:
             self.logging.log("warning", "Failed to start temporary Zapret+GitHub profile", error=str(error))
@@ -4625,49 +3798,6 @@ Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
         candidates = [(url, name) for url, name in candidates if url]
         return self._install_zapret_archive(version=wanted, candidates=candidates)
 
-    def fetch_latest_tg_ws_proxy_release(self) -> dict[str, str]:
-        api_url = "https://api.github.com/repos/Flowseal/tg-ws-proxy/releases/latest"
-        try:
-            payload = self.github.github_json(api_url, timeout=20, purpose="tg-ws-proxy-release-metadata")
-            if not isinstance(payload, dict):
-                raise ValueError("Invalid tg-ws-proxy release metadata")
-        except Exception as error:
-            self.logging.log("warning", "TG WS Proxy release metadata fallback", error=str(error))
-            fallback = self._fetch_latest_release_atom("Flowseal/tg-ws-proxy")
-            tag = str(fallback.get("tag") or "")
-            version = str(fallback.get("latest_version") or "")
-            return {
-                "latest_version": version,
-                "source_url": (
-                    f"https://codeload.github.com/Flowseal/tg-ws-proxy/zip/refs/tags/{urllib.parse.quote(tag)}"
-                    if tag
-                    else "https://codeload.github.com/Flowseal/tg-ws-proxy/zip/refs/heads/main"
-                ),
-                "exe_url": (
-                    f"https://github.com/Flowseal/tg-ws-proxy/releases/download/"
-                    f"{urllib.parse.quote(tag)}/TgWsProxy_windows.exe"
-                    if tag
-                    else "https://github.com/Flowseal/tg-ws-proxy/releases/latest/download/TgWsProxy_windows.exe"
-                ),
-                "exe_name": "TgWsProxy_windows.exe",
-            }
-        latest_version = str(payload.get("tag_name") or payload.get("name") or "").strip().lstrip("v")
-        assets = [item for item in list(payload.get("assets") or []) if isinstance(item, dict)]
-        windows_asset = next(
-            (
-                item
-                for item in assets
-                if str(item.get("name", "")).strip().lower() == "tgwsproxy_windows.exe"
-            ),
-            None,
-        )
-        return {
-            "latest_version": latest_version,
-            "source_url": str(payload.get("zipball_url") or "").strip(),
-            "exe_url": str((windows_asset or {}).get("browser_download_url", "")).strip(),
-            "exe_name": str((windows_asset or {}).get("name", "")).strip() or "TgWsProxy_windows.exe",
-        }
-
     def _fetch_latest_release_atom(self, repository: str) -> dict[str, str]:
         feed_url = f"https://github.com/{repository}/releases.atom"
         payload = self.github.github_bytes(feed_url, timeout=20, purpose=f"{repository}-release-feed")
@@ -4881,156 +4011,6 @@ Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
             self.start_component("zapret2")
         return {"status": "updated", "version": wanted, "path": str(runtime_root)}
 
-    def list_tg_ws_proxy_releases(self, *, limit: int = 25) -> list[dict[str, str]]:
-        """List Flowseal/tg-ws-proxy GitHub releases (newest first)."""
-        repository = "Flowseal/tg-ws-proxy"
-        capped = max(1, min(int(limit), 40))
-        cache_key = "tg-ws-proxy"
-        api_url = f"https://api.github.com/repos/{repository}/releases?per_page={capped}"
-        try:
-            payload = self.github.github_json(api_url, timeout=25, purpose="tg-ws-proxy-releases")
-        except Exception as error:
-            self.logging.log("warning", "TG WS Proxy releases API failed", error=str(error))
-            cached = self._load_component_releases_cache(cache_key)
-            if cached:
-                self.logging.log("info", "Using cached TG WS Proxy releases after API failure", count=len(cached))
-                return cached[:capped]
-            try:
-                atom_items = self._fetch_release_atom_entries(repository, limit=capped)
-            except Exception as atom_error:
-                self.logging.log("warning", "TG WS Proxy releases atom fallback failed", error=str(atom_error))
-                atom_items = []
-            if atom_items:
-                out: list[dict[str, str]] = []
-                for item in atom_items:
-                    version = str(item.get("version") or "")
-                    tag = str(item.get("tag") or f"v{version}")
-                    if not str(tag).startswith("v"):
-                        tag = f"v{version}"
-                    out.append(
-                        {
-                            "version": version,
-                            "tag": tag,
-                            "source_url": (
-                                f"https://codeload.github.com/{repository}/zip/refs/tags/{urllib.parse.quote(tag)}"
-                            ),
-                            "zipball_url": (
-                                f"https://codeload.github.com/{repository}/zip/refs/tags/{urllib.parse.quote(tag)}"
-                            ),
-                            "exe_url": (
-                                f"https://github.com/{repository}/releases/download/"
-                                f"{urllib.parse.quote(tag)}/TgWsProxy_windows.exe"
-                            ),
-                            "exe_name": "TgWsProxy_windows.exe",
-                            "published_at": str(item.get("published_at") or ""),
-                            "prerelease": "0",
-                            "recommended": "1" if not out else "0",
-                        }
-                    )
-                if out:
-                    self._save_component_releases_cache(cache_key, out)
-                return out[:capped]
-            try:
-                latest = self.fetch_latest_tg_ws_proxy_release()
-                version = str(latest.get("latest_version") or "")
-                if not version:
-                    return []
-                return [
-                    {
-                        "version": version,
-                        "tag": f"v{version}",
-                        "source_url": str(latest.get("source_url") or ""),
-                        "exe_url": str(latest.get("exe_url") or ""),
-                        "exe_name": str(latest.get("exe_name") or "TgWsProxy_windows.exe"),
-                        "zipball_url": str(latest.get("source_url") or ""),
-                        "published_at": "",
-                        "prerelease": "0",
-                        "recommended": "1",
-                    }
-                ]
-            except Exception:
-                return []
-        if not isinstance(payload, list):
-            cached = self._load_component_releases_cache(cache_key)
-            return cached[:capped] if cached else []
-        out = []
-        for item in payload:
-            if not isinstance(item, dict) or bool(item.get("draft")):
-                continue
-            tag = str(item.get("tag_name") or "").strip()
-            version = tag.lstrip("vV") or str(item.get("name") or "").strip().lstrip("vV")
-            if not version:
-                continue
-            assets = [a for a in list(item.get("assets") or []) if isinstance(a, dict)]
-            windows_asset = next(
-                (
-                    a
-                    for a in assets
-                    if str(a.get("name") or "").strip().lower() == "tgwsproxy_windows.exe"
-                ),
-                None,
-            )
-            exe_url = str((windows_asset or {}).get("browser_download_url") or "").strip()
-            exe_name = str((windows_asset or {}).get("name") or "").strip() or "TgWsProxy_windows.exe"
-            if not exe_url:
-                exe_url = (
-                    f"https://github.com/{repository}/releases/download/"
-                    f"{urllib.parse.quote(tag)}/TgWsProxy_windows.exe"
-                )
-            source_url = str(item.get("zipball_url") or "").strip() or (
-                f"https://codeload.github.com/{repository}/zip/refs/tags/{urllib.parse.quote(tag)}"
-            )
-            out.append(
-                {
-                    "version": version,
-                    "tag": tag or version,
-                    "source_url": source_url,
-                    "zipball_url": source_url,
-                    "exe_url": exe_url,
-                    "exe_name": exe_name,
-                    "published_at": str(item.get("published_at") or item.get("created_at") or ""),
-                    "prerelease": "1" if bool(item.get("prerelease")) else "0",
-                    "recommended": "1" if not out else "0",
-                }
-            )
-        if out:
-            self._save_component_releases_cache(cache_key, out)
-        return out
-
-    def install_tg_ws_proxy_version(self, version: str) -> dict[str, str]:
-        wanted = str(version or "").strip().lstrip("vV")
-        if not wanted:
-            return {"status": "error", "error": "Version is required"}
-        current = str(self.storage._detect_tgws_version() or "").strip()
-        if current and current == wanted:
-            return {"status": "up-to-date", "version": current}
-        release: dict[str, str] | None = None
-        for item in self.list_tg_ws_proxy_releases(limit=40):
-            if str(item.get("version") or "").strip() == wanted or str(item.get("tag") or "").strip().lstrip("vV") == wanted:
-                release = item
-                break
-        if release is None:
-            tag = f"v{wanted}" if not str(version).startswith("v") else str(version)
-            release = {
-                "latest_version": wanted,
-                "version": wanted,
-                "tag": tag,
-                "source_url": f"https://codeload.github.com/Flowseal/tg-ws-proxy/zip/refs/tags/{urllib.parse.quote(tag)}",
-                "exe_url": (
-                    "https://github.com/Flowseal/tg-ws-proxy/releases/download/"
-                    f"{urllib.parse.quote(tag)}/TgWsProxy_windows.exe"
-                ),
-                "exe_name": "TgWsProxy_windows.exe",
-            }
-        else:
-            release = {
-                "latest_version": str(release.get("version") or wanted),
-                "source_url": str(release.get("source_url") or ""),
-                "exe_url": str(release.get("exe_url") or ""),
-                "exe_name": str(release.get("exe_name") or "TgWsProxy_windows.exe"),
-            }
-        return self._install_tg_ws_proxy_release(release)
-
     def update_zapret_runtime(self) -> dict[str, str]:
         release = self.fetch_latest_zapret_release()
         latest_version = str(release.get("latest_version", "")).strip()
@@ -5164,74 +4144,6 @@ Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
 
     def rebuild_zapret_runtime_snapshot(self) -> None:
         self._rebuild_visible_zapret_runtime_snapshot()
-
-    def update_tg_ws_proxy_runtime(self) -> dict[str, str]:
-        return self._install_tg_ws_proxy_release(self.fetch_latest_tg_ws_proxy_release())
-
-    def _install_tg_ws_proxy_release(self, release: dict[str, str]) -> dict[str, str]:
-        latest_version = str(release.get("latest_version") or release.get("version") or "").strip()
-        current_version = self.storage._detect_tgws_version()
-        if latest_version and current_version == latest_version:
-            return {"status": "up-to-date", "version": current_version}
-        source_url = str(release.get("source_url", "")).strip()
-        exe_url = str(release.get("exe_url", "")).strip()
-        if not source_url or not exe_url:
-            return {"status": "error", "error": "No tg-ws-proxy source or Windows asset found"}
-
-        runtime_root = self.storage.paths.runtime_dir / "tg-ws-proxy"
-        was_running = False
-        try:
-            tg_state = next((item for item in self.list_states() if item.component_id == "tg-ws-proxy"), None)
-            was_running = bool(tg_state and tg_state.status == "running")
-        except Exception:
-            was_running = False
-        temp_root = Path(tempfile.mkdtemp(prefix="zapret_hub_tgws_update_"))
-        try:
-            source_zip = temp_root / "tg-ws-proxy.zip"
-            self._download_to_file(source_url, source_zip, timeout=75)
-            extract_root = temp_root / "extract"
-            extract_root.mkdir(parents=True, exist_ok=True)
-            with zipfile.ZipFile(source_zip, "r") as archive:
-                archive.extractall(extract_root)
-            source_root = next((p for p in extract_root.iterdir() if p.is_dir() and (p / "proxy").exists()), None)
-            if source_root is None:
-                return {"status": "error", "error": "Invalid tg-ws-proxy source archive"}
-
-            windows_exe_path = temp_root / str(release.get("exe_name", "TgWsProxy_windows.exe"))
-            self._download_to_file(exe_url, windows_exe_path, timeout=75)
-
-            if was_running:
-                self.stop_component("tg-ws-proxy")
-
-            backup = self.storage.create_backup(runtime_root, "pre-update-tg-ws-proxy")
-            staging_root = temp_root / "runtime_new"
-            shutil.copytree(source_root, staging_root, dirs_exist_ok=True)
-            (staging_root / "bin").mkdir(parents=True, exist_ok=True)
-            shutil.copy2(windows_exe_path, staging_root / "bin" / "TgWsProxy_windows.exe")
-
-            if runtime_root.exists():
-                shutil.rmtree(runtime_root, ignore_errors=True)
-            shutil.copytree(staging_root, runtime_root, dirs_exist_ok=True)
-            init_py = runtime_root / "proxy" / "__init__.py"
-            if latest_version and init_py.exists():
-                try:
-                    content = init_py.read_text(encoding="utf-8", errors="ignore")
-                    content = re.sub(r'__version__\s*=\s*["\'].*?["\']', f'__version__ = "{latest_version}"', content, count=1)
-                    init_py.write_text(content, encoding="utf-8")
-                except Exception:
-                    pass
-            self.storage.ensure_layout()
-            if was_running:
-                self.start_component("tg-ws-proxy")
-            self.logging.log(
-                "info",
-                "TG WS Proxy updated",
-                version=latest_version,
-                backup=str(backup or ""),
-            )
-            return {"status": "updated", "version": latest_version or current_version}
-        finally:
-            shutil.rmtree(temp_root, ignore_errors=True)
 
     def _cleanup_merged_runtime(self) -> None:
         self._cleanup_inactive_zapret_runtimes()
@@ -6369,38 +5281,3 @@ Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
                     self.logging.log("warning", "Failed to start Telegram", path=str(candidate), error=str(error))
         return candidate_found, False
 
-    def _ensure_telegram_and_open_proxy_link(self, host: str, port: int, secret: str) -> dict[str, Any]:
-        self.logging.log("info", "TG WS Proxy auto-connect requested", component_id="tg-ws-proxy", host=host, port=port)
-        running_before = self._is_telegram_running()
-        candidate_found = any(candidate.exists() for candidate in self._telegram_desktop_candidates())
-        launch_requested = False
-        if not running_before:
-            self.logging.log("info", "Telegram Desktop is not running, opening proxy link without forced launch", component_id="tg-ws-proxy")
-        running_after = self._is_telegram_running()
-        self.logging.log("info", "Sending proxy link to Telegram", component_id="tg-ws-proxy")
-        link_opened = self._open_telegram_proxy_link(host=host, port=port, secret=secret)
-        info = {
-            "running_before": running_before,
-            "running_after": running_after,
-            "desktop_candidate_found": candidate_found,
-            "launch_requested": launch_requested,
-            "link_opened": link_opened,
-            "missing": not running_after and not link_opened,
-        }
-        self._telegram_proxy_launch_info = info
-        if not running_after and not link_opened:
-            self.logging.log("warning", "Telegram was not detected after proxy start", component_id="tg-ws-proxy")
-        return info
-
-    def _open_telegram_proxy_link(self, host: str, port: int, secret: str) -> bool:
-        link = f"tg://proxy?server={host}&port={port}&secret=dd{secret}"
-        try:
-            if sys.platform.startswith("win"):
-                os.startfile(link)  # type: ignore[attr-defined]
-            else:
-                webbrowser.open(link)
-            self.logging.log("info", "Telegram proxy link opened", link=link)
-            return True
-        except Exception as error:
-            self.logging.log("warning", "Failed to open Telegram proxy link", link=link, error=str(error))
-            return False

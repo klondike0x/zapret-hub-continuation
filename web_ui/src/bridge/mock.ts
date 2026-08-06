@@ -7,8 +7,6 @@ import type {
   Events,
   FileEntry,
   LogEntry,
-  MarketplaceCard,
-  MarketplaceProject,
   Mod,
   Notification,
   RuntimeId,
@@ -48,24 +46,6 @@ const components: Record<ComponentId, import("./types").ComponentInfo> = {
     description: "Альтернативная локальная обработка трафика",
     config: "Strategy: fake-split · Ports: 443",
     externalUrl: "https://example.com/zapret2",
-  },
-  "goshkow-vpn": {
-    id: "goshkow-vpn",
-    name: "goshkow VPN",
-    version: "0.9.3",
-    status: "off",
-    description: "WireGuard-based VPN",
-    config: "Endpoint: nl-01 · MTU: 1420",
-    externalUrl: "https://goshkow.example",
-  },
-  "tg-ws-proxy": {
-    id: "tg-ws-proxy",
-    name: "TG WS Proxy",
-    version: "0.4.0",
-    status: "off",
-    enabled: false,
-    description: "WebSocket proxy для Telegram",
-    config: "Host: 127.0.0.1:8443",
   },
   "xbox-dns": {
     id: "xbox-dns",
@@ -111,75 +91,22 @@ const initialMods: Mod[] = [
   },
 ];
 
-const mockMarketplace: MarketplaceProject[] = [
-  {
-    id: 1,
-    slug: "youtube-flow",
-    title: "YouTube Flow",
-    summary: "YouTube без ограничений и лишних настроек.",
-    author: "goshkow",
-    iconUrl: "",
-    projectUrl: "https://goshkow.com/zapret-hub/marketplace/projects/youtube-flow",
-    apiUrl: "",
-    downloadUrl: "",
-    compatibility: "zapret",
-    categories: ["Соцсети"],
-    license: "MIT",
-    downloads: 128400,
-    downloadsCompact: "128.4K",
-    likes: 3180,
-    favorites: 1912,
-    followers: 640,
-    comments: 27,
-    featured: true,
-    updatedAt: Math.floor(Date.now() / 1000) - 86400,
-    publishedAt: Math.floor(Date.now() / 1000) - 86400 * 30,
-    bodyHtml: "<h2>Возможности</h2><ul><li>Простая установка</li><li>Автоматические обновления</li></ul>",
-    versions: [{ id: 11, version: "1.0.0", changelog: "Первый релиз", size: 12000, sha256: "", downloads: 1000, compatibility: "zapret" }],
-  },
-  {
-    id: 2,
-    slug: "discord-bridge",
-    title: "Discord Bridge",
-    summary: "Стабильный Discord голос и медиа.",
-    author: "goshkow",
-    iconUrl: "",
-    projectUrl: "https://goshkow.com/zapret-hub/marketplace/projects/discord-bridge",
-    apiUrl: "",
-    downloadUrl: "",
-    compatibility: "zapret2",
-    categories: ["Игры", "Соцсети"],
-    license: "MIT",
-    downloads: 84200,
-    downloadsCompact: "84.2K",
-    likes: 2104,
-    favorites: 980,
-    followers: 310,
-    comments: 12,
-    featured: false,
-    updatedAt: Math.floor(Date.now() / 1000) - 3600 * 8,
-    publishedAt: Math.floor(Date.now() / 1000) - 86400 * 14,
-    bodyHtml: "<p>Оптимизация Discord для Zapret 2.</p>",
-    versions: [{ id: 21, version: "2.1.0", changelog: "Улучшения стабильности", size: 18000, sha256: "", downloads: 500, compatibility: "zapret2" }],
-  },
-];
-
 const initialLogs: LogEntry[] = Array.from({ length: 20 }, (_, i) => ({
   id: `l${i}`,
-  source: (["app", "zapret", "vpn", "tg", "zapret2"] as const)[i % 5],
+  source: (["app", "zapret", "zapret2", "app", "zapret"] as const)[i % 5],
   level: (["info", "info", "warn", "info", "error"] as const)[i % 5],
   message: [
     "Application started",
     "Zapret worker spawned pid=1428",
     "Strategy applied: general-alt",
-    "TG WS proxy idle",
-    "VPN handshake pending",
+    "Orchestrator heartbeat ok",
+    "Filter list reloaded",
   ][i % 5],
   ts: nowMinus(40 - i * 2),
 }));
 
 const initialState: AppState = {
-  runtime: { active: "zapret", order: ["zapret", "goshkow-vpn", "zapret2", "none"], status: "on" },
+  runtime: { active: "zapret", order: ["zapret", "zapret2", "none"], status: "on" },
   services: { available: services, selected: ["youtube", "discord", "telegram"] },
   components,
   mods: initialMods,
@@ -229,18 +156,6 @@ const initialState: AppState = {
       ],
     },
     zapret2: { controlMode: "manual", tcpPorts: "80,443", udpPorts: "443", rawFilter: "", luaStrategy: "", strategyId: "balanced", youtubeDiscordBypass: true },
-    vpn: {
-      subscriptionUrl: "",
-      subscriptionState: "empty",
-      selectedServerId: "auto",
-      servers: [],
-      tunEnabled: true,
-      routingMode: "global",
-      systemProxyMode: "pac",
-      processes: "",
-      processesExcludeMode: false,
-    },
-    tg: { host: "127.0.0.1", port: 1443, secret: "", dcIp: "4:149.154.167.220", cfProxyEnabled: true, cfProxyPriority: true, cfProxyDomain: "", fakeTlsDomain: "", bufferKb: 256, poolSize: 4 },
     dns: { profile: "xbox" },
     theme: "night",
   },
@@ -257,7 +172,7 @@ const initialState: AppState = {
     zapretActive: true,
   },
   onboarding: { completed: false, isUpdate: false, forceOpen: false },
-  ui: { locale: "ru", theme: "night", hasValidVpnKey: false },
+  ui: { locale: "ru", theme: "night" },
 };
 
 // -------- mock adapter --------
@@ -270,128 +185,13 @@ export function createMockBridge(): ZapretHubBridge {
   };
   const pushState = () => emit("state.changed", state);
 
-  type MockDlJob = {
-    jobId: string;
-    slug: string;
-    status: string;
-    title: string;
-    iconUrl: string;
-    compatibility: string;
-    progress: number;
-    bytesDone: number;
-    bytesTotal: number;
-    message: string;
-  };
-  let mockDlQueue: MockDlJob[] = [];
-  const mockDlPaused = new Set<string>();
-  let mockDlBusy = false;
-
-  const mockQueueSnapshot = (): Events["marketplace.queue"] => {
-    const active = mockDlQueue.find((j) => j.status === "downloading" || j.status === "installing");
-    const overall = active?.bytesTotal
-      ? Math.max(0, Math.min(1, active.bytesDone / active.bytesTotal))
-      : active
-        ? Math.max(0, active.progress)
-        : mockDlQueue.length
-          ? 0
-          : 0;
-    return {
-      busy: mockDlBusy,
-      activeSlug: active?.slug || "",
-      overallProgress: overall,
-      pending: mockDlQueue.map((j) => j.slug),
-      items: mockDlQueue.map((j) => ({ ...j })),
-    };
-  };
-  const emitQueue = () => emit("marketplace.queue", mockQueueSnapshot());
-  const pumpMockDownloads = () => {
-    if (mockDlBusy) return;
-    const next = mockDlQueue.find((j) => j.status === "queued" && !mockDlPaused.has(j.jobId));
-    if (!next) return;
-    mockDlBusy = true;
-    next.status = "downloading";
-    next.progress = 0.05;
-    next.bytesDone = 5;
-    emit("marketplace.download-progress", { ...next, pending: mockDlQueue.map((j) => j.slug) });
-    emitQueue();
-    let step = 0;
-    const tick = () => {
-      if (!mockDlQueue.some((j) => j.jobId === next.jobId)) {
-        mockDlBusy = false;
-        pumpMockDownloads();
-        return;
-      }
-      if (mockDlPaused.has(next.jobId)) {
-        next.status = "paused";
-        mockDlBusy = false;
-        emit("marketplace.download-progress", { ...next, pending: mockDlQueue.map((j) => j.slug) });
-        emitQueue();
-        pumpMockDownloads();
-        return;
-      }
-      step += 1;
-      next.bytesDone = Math.min(100, 5 + step * 20);
-      next.progress = next.bytesDone / 100;
-      if (next.bytesDone >= 100) {
-        next.status = "installing";
-        next.progress = 0.95;
-        emit("marketplace.download-progress", { ...next, pending: mockDlQueue.map((j) => j.slug) });
-        emitQueue();
-        window.setTimeout(() => {
-          next.status = "done";
-          next.progress = 1;
-          mockDlQueue = mockDlQueue.filter((j) => j.jobId !== next.jobId);
-          mockDlBusy = false;
-          const project = mockMarketplace.find((item) => item.slug === next.slug);
-          if (project) {
-            const mod: Mod = {
-              id: `mp-${next.slug}`,
-              name: project.title,
-              version: project.versions?.[0]?.version || "1.0.0",
-              enabled: true,
-              description: project.summary,
-              author: project.author,
-              compatibleFiles: ["domains", "general"],
-              source: "custom",
-              createdAt: Date.now(),
-              marketplaceSlug: next.slug,
-              iconUrl: project.iconUrl,
-              sourceUrl: project.projectUrl,
-            };
-            if (project.compatibility === "zapret2") {
-              const mods2 = state.mods2 || [];
-              if (!mods2.some((m) => m.marketplaceSlug === next.slug)) state.mods2 = [...mods2, mod];
-            } else if (!state.mods.some((m) => m.marketplaceSlug === next.slug)) {
-              state.mods = [...state.mods, mod];
-            }
-            pushState();
-          }
-          emit("marketplace.download-progress", {
-            ...next,
-            pending: mockDlQueue.map((j) => j.slug),
-            mods: structuredClone(state.mods),
-            mods2: structuredClone(state.mods2 || []),
-          });
-          emit("toast.show", { id: `mp-${next.slug}`, message: `Модификация «${next.title}» установлена.`, kind: "success" });
-          emitQueue();
-          pumpMockDownloads();
-        }, 350);
-        return;
-      }
-      emit("marketplace.download-progress", { ...next, pending: mockDlQueue.map((j) => j.slug) });
-      emitQueue();
-      window.setTimeout(tick, 280);
-    };
-    window.setTimeout(tick, 280);
-  };
-
   // periodic mock log to demonstrate live tail
   if (typeof window !== "undefined") {
     setInterval(() => {
       if (state.runtime.status !== "on") return;
       const entry: LogEntry = {
         id: `l${Date.now()}`,
-        source: (["app", "zapret", "vpn", "tg"] as const)[Math.floor(Math.random() * 4)],
+        source: (["app", "zapret", "zapret2"] as const)[Math.floor(Math.random() * 3)],
         level: Math.random() > 0.85 ? "warn" : "info",
         message: [
           "heartbeat ok",
@@ -408,17 +208,14 @@ export function createMockBridge(): ZapretHubBridge {
   }
 
   const applyMutex = (id: RuntimeId) => {
-    // Zapret and Zapret2/VPN mutually exclusive at component level
+    // Zapret and Zapret2 mutually exclusive at component level
     if (id === "zapret") {
       state.components.zapret.status = "on";
       state.components.zapret2.status = "off";
-      state.components["goshkow-vpn"].status = "off";
     } else if (id === "zapret2") {
       state.components.zapret2.status = "on";
       state.components.zapret.status = "off";
-      state.components["goshkow-vpn"].status = "off";
     } else {
-      state.components["goshkow-vpn"].status = "on";
       state.components.zapret.status = "off";
       state.components.zapret2.status = "off";
     }
@@ -433,8 +230,6 @@ export function createMockBridge(): ZapretHubBridge {
     switch (cmd) {
       case "state.get":
         return structuredClone(state) as Commands[K]["out"];
-      case "marketplace.installed":
-        return { mods: structuredClone(state.mods), mods2: structuredClone(state.mods2 || []) } as Commands[K]["out"];
       case "window.minimize":
       case "window.close":
         console.log("[mock bridge]", cmd);
@@ -453,7 +248,6 @@ export function createMockBridge(): ZapretHubBridge {
         else {
           state.components.zapret.status = "off";
           state.components.zapret2.status = "off";
-          state.components["goshkow-vpn"].status = "off";
         }
         pushState();
         return undefined as Commands[K]["out"];
@@ -476,7 +270,6 @@ export function createMockBridge(): ZapretHubBridge {
         pushState();
         return undefined as Commands[K]["out"];
       }
-      case "tg.connect":
       case "onboarding.cancel":
         return undefined as Commands[K]["out"];
       case "component.check-update": {
@@ -493,11 +286,6 @@ export function createMockBridge(): ZapretHubBridge {
             { version: "1.0.2", publishedAt: "2026-06-16T13:00:43Z", recommended: false, current: state.components.zapret2.version === "1.0.2" },
             { version: "1.0.1", publishedAt: "2026-06-10T12:00:00Z", recommended: false, current: state.components.zapret2.version === "1.0.1" },
             { version: "1.0", publishedAt: "2026-06-01T12:00:00Z", recommended: false, current: false },
-          ]
-          : p.id === "tg-ws-proxy" ? [
-            { version: "1.8.1", publishedAt: "2026-07-01T12:00:00Z", recommended: true, current: state.components["tg-ws-proxy"].version === "1.8.1" },
-            { version: "1.8.0", publishedAt: "2026-06-20T12:00:00Z", recommended: false, current: state.components["tg-ws-proxy"].version === "1.8.0" },
-            { version: "1.7.3", publishedAt: "2026-05-10T12:00:00Z", recommended: false, current: false },
           ]
           : undefined;
         const latestVersion = versions?.[0]?.version || (p.id === "zapret2" ? "master" : "latest");
@@ -519,7 +307,7 @@ export function createMockBridge(): ZapretHubBridge {
         pushState();
         setTimeout(() => {
           state.components[p.id].status = "on";
-          state.components[p.id].version = p.version || (p.id === "zapret2" ? "1.0.3" : p.id === "zapret" ? "1.10.0" : p.id === "tg-ws-proxy" ? "1.8.1" : "latest");
+          state.components[p.id].version = p.version || (p.id === "zapret2" ? "1.0.3" : p.id === "zapret" ? "1.10.0" : "latest");
           pushState();
           emit("component.update-result", { id: p.id, status: "success", version: state.components[p.id].version });
         }, 900);
@@ -751,140 +539,6 @@ export function createMockBridge(): ZapretHubBridge {
       case "component.configure":
       case "component.open-external":
         console.log("[mock]", cmd, payload);
-        return undefined as Commands[K]["out"];
-      case "marketplace.list": {
-        const p = (payload || {}) as Commands["marketplace.list"]["in"];
-        let list = mockMarketplace.map((item) => {
-          const { bodyHtml: _b, versions: _v, ...card } = item;
-          return card as MarketplaceCard;
-        });
-        const q = String(p.q || "").trim().toLowerCase();
-        if (q) {
-          list = list.filter(
-            (item) =>
-              item.title.toLowerCase().includes(q) ||
-              item.summary.toLowerCase().includes(q) ||
-              item.slug.toLowerCase().includes(q),
-          );
-        }
-        if (p.compatibility) list = list.filter((item) => item.compatibility === p.compatibility);
-        if (p.category) list = list.filter((item) => item.categories.includes(String(p.category)));
-        const limit = Math.max(1, Math.min(50, Number(p.limit || 5)));
-        const page = Math.max(1, Number(p.page || 1));
-        const pages = Math.max(1, Math.ceil(list.length / limit));
-        const start = (page - 1) * limit;
-        return {
-          ok: true,
-          projects: list.slice(start, start + limit),
-          total: list.length,
-          page,
-          pages,
-          categories: ["Игры", "Программы", "Соцсети"],
-        } as Commands[K]["out"];
-      }
-      case "marketplace.get": {
-        const slug = String((payload as Commands["marketplace.get"]["in"])?.slug || "");
-        const project = mockMarketplace.find((item) => item.slug === slug);
-        if (!project) throw new Error("Project not found");
-        return { ok: true, project: structuredClone(project) } as Commands[K]["out"];
-      }
-      case "marketplace.download": {
-        const p = payload as Commands["marketplace.download"]["in"];
-        const slug = String(p.slug || "");
-        if (!slug) throw new Error("invalid_slug");
-        if (mockDlQueue.some((j) => j.slug === slug && j.status !== "done" && j.status !== "error" && j.status !== "cancelled")) {
-          return { queued: true, alreadyQueued: true, slug, pending: mockDlQueue.map((j) => j.slug), jobId: mockDlQueue.find((j) => j.slug === slug)?.jobId } as Commands[K]["out"];
-        }
-        const job = {
-          jobId: `mock-${Date.now()}-${slug}`,
-          slug,
-          status: "queued",
-          title: String(p.title || slug),
-          iconUrl: String(p.iconUrl || ""),
-          compatibility: String(p.compatibility || ""),
-          progress: 0,
-          bytesDone: 0,
-          bytesTotal: 100,
-          message: String(p.title || slug),
-        };
-        mockDlQueue.push(job);
-        emitQueue();
-        emit("marketplace.download-progress", { ...job, pending: mockDlQueue.map((j) => j.slug) });
-        pumpMockDownloads();
-        return { queued: true, slug, jobId: job.jobId, pending: mockDlQueue.map((j) => j.slug) } as Commands[K]["out"];
-      }
-      case "marketplace.remove": {
-        const slug = String((payload as Commands["marketplace.remove"]["in"])?.slug || "");
-        const removed = [...state.mods, ...(state.mods2 || [])]
-          .filter((mod) => mod.marketplaceSlug === slug)
-          .map((mod) => mod.id);
-        state.mods = state.mods.filter((mod) => mod.marketplaceSlug !== slug);
-        state.mods2 = (state.mods2 || []).filter((mod) => mod.marketplaceSlug !== slug);
-        pushState();
-        return { ok: true, slug, removed, mods: state.mods, mods2: state.mods2 || [] } as Commands[K]["out"];
-      }
-      case "marketplace.queue":
-        return mockQueueSnapshot() as Commands[K]["out"];
-      case "marketplace.cancel": {
-        const p = payload as Commands["marketplace.cancel"]["in"];
-        const slug = String(p?.slug || "");
-        const jobId = String(p?.jobId || "");
-        mockDlQueue = mockDlQueue.filter((j) => {
-          const match = (jobId && j.jobId === jobId) || (slug && j.slug === slug);
-          if (match) emit("marketplace.download-progress", { ...j, status: "cancelled", pending: [] });
-          return !match;
-        });
-        mockDlPaused.clear();
-        emitQueue();
-        pumpMockDownloads();
-        return mockQueueSnapshot() as Commands[K]["out"];
-      }
-      case "marketplace.pause": {
-        const p = payload as Commands["marketplace.pause"]["in"];
-        const slug = String(p?.slug || "");
-        const job = mockDlQueue.find((j) => j.jobId === p?.jobId || j.slug === slug);
-        if (job) {
-          mockDlPaused.add(job.jobId);
-          job.status = "paused";
-          emit("marketplace.download-progress", { ...job, pending: mockDlQueue.map((j) => j.slug) });
-          emitQueue();
-        }
-        return mockQueueSnapshot() as Commands[K]["out"];
-      }
-      case "marketplace.resume": {
-        const p = payload as Commands["marketplace.resume"]["in"];
-        const slug = String(p?.slug || "");
-        const job = mockDlQueue.find((j) => j.jobId === p?.jobId || j.slug === slug);
-        if (job) {
-          mockDlPaused.delete(job.jobId);
-          job.status = "queued";
-          emit("marketplace.download-progress", { ...job, pending: mockDlQueue.map((j) => j.slug) });
-          emitQueue();
-          pumpMockDownloads();
-        }
-        return mockQueueSnapshot() as Commands[K]["out"];
-      }
-      case "marketplace.reorder-queue": {
-        const p = payload as Commands["marketplace.reorder-queue"]["in"];
-        const ordered = (p?.orderedSlugs || []).map(String);
-        const active = mockDlQueue.filter((j) => j.status === "downloading" || j.status === "installing");
-        const rest = mockDlQueue.filter((j) => j.status === "queued" || j.status === "paused");
-        const bySlug = new Map(rest.map((j) => [j.slug, j]));
-        const next = [...active];
-        for (const slug of ordered) {
-          const job = bySlug.get(slug);
-          if (job) {
-            next.push(job);
-            bySlug.delete(slug);
-          }
-        }
-        for (const job of bySlug.values()) next.push(job);
-        mockDlQueue = next;
-        emitQueue();
-        return mockQueueSnapshot() as Commands[K]["out"];
-      }
-      case "marketplace.open-url":
-        console.log("[mock] open-url", payload);
         return undefined as Commands[K]["out"];
       case "mods.reorder":
       case "mods2.reorder": {

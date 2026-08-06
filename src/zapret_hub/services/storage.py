@@ -127,7 +127,6 @@ class StorageManager:
         components_file = self.paths.data_dir / "components.json"
         zapret_version = self._detect_zapret_version()
         zapret2_version = self._detect_zapret2_version()
-        tg_version = self._detect_tgws_version()
         default_components = [
             {
                 "id": "zapret",
@@ -140,16 +139,6 @@ class StorageManager:
                 "autostart": False,
             },
             {
-                "id": "goshkow-vpn",
-                "name": "goshkow vpn",
-                "description": "Авторская VPN-подписка без ограничений по трафику и количеству устройств. Доступна на смартфонах, ПК, ноутбуках и других устройствах.",
-                "version": "",
-                "source": "https://vpn.goshkow.com",
-                "command": [],
-                "enabled": False,
-                "autostart": False,
-            },
-            {
                 "id": "zapret2",
                 "name": "Zapret2",
                 "description": "Новое поколение zapret от bol-van с winws2/nfqws2 и Lua-стратегиями.",
@@ -158,16 +147,6 @@ class StorageManager:
                 "command": [],
                 "enabled": False,
                 "autostart": False,
-            },
-            {
-                "id": "tg-ws-proxy",
-                "name": "Tg-Ws-Proxy",
-                "description": "Прокси для Telegram через локальный порт.",
-                "version": tg_version,
-                "source": "https://github.com/Flowseal/tg-ws-proxy",
-                "command": ["TgWsProxy_windows.exe"],
-                "enabled": True,
-                "autostart": True,
             },
             {
                 "id": "xbox-dns",
@@ -249,24 +228,6 @@ class StorageManager:
                 value = value.replace("set", "").replace("LOCAL_VERSION", "").replace("=", "").strip('" ').strip()
                 if value:
                     return value
-        except Exception:
-            return "unknown"
-        return "unknown"
-
-    def _detect_tgws_version(self) -> str:
-        pyproject = self.paths.runtime_dir / "tg-ws-proxy" / "pyproject.toml"
-        init_py = self.paths.runtime_dir / "tg-ws-proxy" / "proxy" / "__init__.py"
-        try:
-            if init_py.exists():
-                for line in init_py.read_text(encoding="utf-8", errors="ignore").splitlines():
-                    stripped = line.strip()
-                    if stripped.startswith("__version__") and "=" in stripped:
-                        return stripped.split("=", 1)[-1].strip().strip('"').strip("'")
-            if pyproject.exists():
-                for line in pyproject.read_text(encoding="utf-8", errors="ignore").splitlines():
-                    stripped = line.strip()
-                    if stripped.startswith("version") and "=" in stripped:
-                        return stripped.split("=", 1)[-1].strip().strip('"').strip("'")
         except Exception:
             return "unknown"
         return "unknown"

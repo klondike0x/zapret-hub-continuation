@@ -29,8 +29,6 @@ def _should_skip_path(path: Path, source_dir: Path) -> bool:
     except Exception:
         return False
     parts = rel.parts
-    if any(part.startswith("tg-ws-proxy.bak.") for part in parts):
-        return True
     lowered = tuple(part.lower() for part in parts)
     if "docs" in lowered and rel.name.lower() == "readme.md":
         return True
@@ -131,7 +129,7 @@ def _package_portable(
             f"pruned runtime for {arch}: dirs={stats['removed_dirs']} "
             f"files={stats['removed_files']} elf={stats['removed_elf']}"
         )
-    for backup_dir in portable_dir.rglob("tg-ws-proxy.bak.*"):
+    for backup_dir in portable_dir.rglob("*.bak.*"):
         if backup_dir.is_dir():
             shutil.rmtree(backup_dir, ignore_errors=True)
 
@@ -169,8 +167,8 @@ def _parse_args() -> argparse.Namespace:
     root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(
         description=(
-            "Prepare GitHub/mirror release assets for the slim installer model. "
-            "Portable zips are published for goshkow.com; the installer downloads them later "
+            "Prepare GitHub release assets for the slim installer model. "
+            "Portable zips are published to GitHub Releases; the installer downloads them later "
             "and does not embed these archives."
         )
     )
@@ -267,7 +265,7 @@ def main() -> None:
         "assets": {
             key: {
                 "name": value["name"],
-                "download_url": f"https://goshkow.com/zapret-hub/{key}",
+                "download_url": f"https://github.com/klondike0x/zapret-hub-continuation/releases/download/v{version}/{value['name']}",
                 "digest": value["digest"],
                 "size": value["size"],
             }
@@ -284,16 +282,14 @@ def main() -> None:
     note.write_text(
         "Slim installer release model\n"
         "============================\n"
-        "1) Publish portable_win_x64.zip and portable_win_arm64.zip to the goshkow.com mirror\n"
-        "   (and/or keep them as GitHub release assets).\n"
+        "1) Publish portable_win_x64.zip and portable_win_arm64.zip as GitHub release assets.\n"
         "2) install_zaprethub_*_universal.exe is a slim installer: at runtime it downloads the\n"
-        "   matching arch build from https://goshkow.com/zapret-hub/update — it does NOT embed\n"
-        "   the portable archives.\n"
+        "   matching arch build from GitHub Releases — it does NOT embed the portable archives.\n"
         "3) Each portable folder includes arch-matching uninstall_zaprethub.exe.\n"
         "4) Standalone uninstallers may also be published as separate release assets.\n"
         "\n"
-        "Mirror update JSON (https://goshkow.com/zapret-hub/update)\n"
-        "----------------------------------------------------------\n"
+        "Update JSON (GitHub Releases API)\n"
+        "---------------------------------\n"
         "Required fields for same-version hotfix detection:\n"
         "  - version / tag  (product version, e.g. 3.0.1 — may stay unchanged for hotfixes)\n"
         "  - assets.x64.digest     = sha256:<portable x64 zip bytes on the mirror>\n"

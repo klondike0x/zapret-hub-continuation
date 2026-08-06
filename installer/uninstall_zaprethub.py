@@ -478,7 +478,7 @@ def _parse_install_dir(argv: list[str]) -> Path | None:
 
 
 def main() -> int:
-    set_windows_app_id("goshkow.ZapretHub.Uninstaller.3.0.2")
+    set_windows_app_id("ZapretHub.Continuation.Uninstaller")
     args = [arg for arg in sys.argv[1:] if arg != "--uninstall"]
     if not is_admin():
         relaunch_with_elevation(args or ["--elevated-ui"])

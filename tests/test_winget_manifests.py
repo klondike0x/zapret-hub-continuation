@@ -20,7 +20,7 @@ def test_generate_winget_manifests_selects_architecture_and_hash(tmp_path: Path)
         x64_archive=x64,
         arm64_archive=arm64,
         output_dir=output,
-        release_base_url="https://github.com/goshkow/Zapret-Hub/releases/download/v3.0.0",
+        release_base_url="https://github.com/klondike0x/zapret-hub-continuation/releases/download/v3.0.0",
     )
 
     assert len(generated) == 4

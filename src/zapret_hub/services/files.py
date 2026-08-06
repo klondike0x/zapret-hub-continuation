@@ -489,14 +489,9 @@ class FilesManager:
         return prepared
 
     def _managed_collection_values(self, kind: str) -> list[str]:
-        if kind != "ips" or self.settings is None:
-            return []
-        try:
-            host = str(self.settings.get().tg_proxy_host or "").strip()
-        except Exception:
-            return []
-        normalized = self._normalize_ip(host)
-        return [normalized] if normalized else []
+        # Managed IP entries (formerly the TG WS Proxy host) were removed with
+        # the proxy component.
+        return []
 
     def _is_editable_file(self, path: Path) -> bool:
         suffix = path.suffix.lower()

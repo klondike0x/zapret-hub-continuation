@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist_nuitka/
+dist_installer/
+.pytest_cache/
+.mypy_cache/
+
+# Node / web_ui
+node_modules/
+web_ui/dist/
+web_ui/.vite/
+
+# Runtime / build artifacts
+release_*/
+*.log
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+Desktop.ini
+
+# Local user data (created at runtime)
+data/
+merged_runtime/
+backups/

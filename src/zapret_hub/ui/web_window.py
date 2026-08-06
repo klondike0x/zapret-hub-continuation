@@ -24,7 +24,7 @@ from zapret_hub.services.onboarding_state import onboarding_is_update
 from zapret_hub.runtime_env import development_install_root, is_packaged_runtime, packaged_install_root
 
 
-_COMPONENT_IDS = ("zapret", "zapret2", "goshkow-vpn", "tg-ws-proxy", "xbox-dns")
+_COMPONENT_IDS = ("zapret", "zapret2", "xbox-dns")
 _WINDOW_WIDTH = 860
 _WINDOW_HEIGHT = 520
 
@@ -293,16 +293,6 @@ class WebBridge(QObject):
         "files2.save",
         "files2.create",
         "files2.rename",
-        "marketplace.download",
-        "marketplace.remove",
-        "marketplace.open-url",
-        "marketplace.queue",
-        "marketplace.cancel",
-        "marketplace.pause",
-        "marketplace.resume",
-        "marketplace.reorder-queue",
-        "marketplace.updates-status",
-        "marketplace.dismiss-updates",
         "component.check-updates-all",
         "component.install-updates-all",
         "logs.export",
@@ -310,13 +300,6 @@ class WebBridge(QObject):
         "logs.get",
     })
     _ASYNC_RESULT_COMMANDS = frozenset({
-        "marketplace.installed",
-        "marketplace.image",
-        "marketplace.list",
-        "marketplace.get",
-        "marketplace.remove",
-        "marketplace.check-updates",
-        "vpn.import-subscription",
         "mods.delete",
         "mods2.delete",
     })
@@ -361,10 +344,8 @@ class WebBridge(QObject):
         self._app_update_busy = False
         self._app_update_check_started = False
         self._app_update_check_busy = False
-        self._marketplace_update_check_started = False
         self._component_update_check_started = False
         self._component_update_check_busy = False
-        self._marketplace_update_check_busy = False
         # Only the owner of this token may clear _runtime_transition_status.
         self._transition_token = 0
         # Thread-safe state push: workers must not call QTimer directly.
@@ -372,7 +353,6 @@ class WebBridge(QObject):
         self._gui_call.connect(self._run_gui_call)
         self._discord_presence = None
         self._wire_orchestrator()
-        self._wire_marketplace()
         self._wire_process_status()
         self._wire_discord_presence()
 
@@ -505,80 +485,6 @@ class WebBridge(QObject):
         except Exception:
             pass
 
-    def _wire_marketplace(self) -> None:
-        market = getattr(self.context, "marketplace", None) if self.context is not None else None
-        if market is None:
-            return
-
-        def _on_event(name: str, payload: dict[str, Any]) -> None:
-            status = str(payload.get("status") or "") if name == "marketplace.download-progress" else ""
-            refresh_installed = status == "done" or bool(payload.get("removedForUpdate"))
-            if refresh_installed:
-                try:
-                    installed = self._build_marketplace_mods_payload()
-                    payload = {**payload, **installed}
-                    compatibility = str(payload.get("compatibility") or "zapret").strip().lower()
-                    if compatibility != "zapret2":
-                        self._cached_generals = None
-                        self._cached_file_entries = None
-                    else:
-                        self._cached_file2_entries = None
-                    if status == "done":
-                        self._queue_mod_runtime_refresh("zapret2" if compatibility == "zapret2" else "zapret")
-                    self._schedule_on_gui(lambda value=installed: self._merge_marketplace_mods_cache(value))
-                    installed_encoded = json.dumps(installed, ensure_ascii=False)
-                    self._schedule_on_gui(
-                        lambda value=installed_encoded: self.event.emit("marketplace.mods-changed", value)
-                    )
-                    self._schedule_on_gui(lambda: self.emit_state(force=True))
-                except Exception as error:
-                    try:
-                        self.context.logging.log(
-                            "error", "Marketplace installed-state refresh failed", error=str(error)
-                        )
-                    except Exception:
-                        pass
-            try:
-                encoded = json.dumps(payload, ensure_ascii=False)
-            except Exception:
-                return
-            self._schedule_on_gui(lambda n=name, e=encoded: self.event.emit(n, e))
-            if name == "marketplace.download-progress":
-                slug = str(payload.get("slug") or "")
-                if status == "done":
-                    self._schedule_on_gui(
-                        lambda: self._emit_toast(
-                            f"Модификация «{slug}» установлена." if self._ru() else f"Mod “{slug}” installed.",
-                            kind="success",
-                            toast_id=f"mp-dl-{slug}",
-                        )
-                    )
-                elif status == "error":
-                    msg = str(payload.get("message") or "error")
-                    self._schedule_on_gui(
-                        lambda: self._emit_toast(
-                            (
-                                f"Не удалось установить «{slug}»: {msg} Попробуйте ещё раз; если ошибка повторится, перезапустите приложение."
-                                if self._ru()
-                                else f"Failed to install “{slug}”: {msg} Try again; restart the app if the error repeats."
-                            ),
-                            kind="error",
-                            toast_id=f"mp-dl-{slug}",
-                        )
-                    )
-
-        market.on_event = _on_event
-
-    def _merge_marketplace_mods_cache(self, payload: dict[str, Any]) -> None:
-        cached = getattr(self, "_last_state_payload", None)
-        if not isinstance(cached, dict) or not cached:
-            return
-        self._last_state_payload = {
-            **cached,
-            "mods": list(payload.get("mods") or []),
-            "mods2": list(payload.get("mods2") or []),
-        }
-
     def _emit_toast(self, message: str, *, kind: str = "info", toast_id: str = "") -> None:
         payload = {
             "id": toast_id or f"toast-{int(time.time() * 1000)}",
@@ -609,8 +515,6 @@ class WebBridge(QObject):
         if not self._app_update_check_started and bool(settings.check_updates_on_start):
             self._app_update_check_started = True
             QTimer.singleShot(4800, lambda: self._start_app_update_check(manual=False))
-        if not self._marketplace_update_check_started and bool(getattr(settings, "check_mod_updates_on_start", True)):
-            self._maybe_schedule_marketplace_update_check()
         if not self._component_update_check_started and bool(getattr(settings, "check_component_updates_on_start", True)):
             self._component_update_check_started = True
             QTimer.singleShot(2600, lambda: self._start_component_updates_check(show_modal=True))
@@ -623,7 +527,7 @@ class WebBridge(QObject):
         def worker() -> None:
             updates: list[dict[str, Any]] = []
             try:
-                for component_id in ("zapret", "zapret2", "tg-ws-proxy"):
+                for component_id in ("zapret", "zapret2"):
                     item = self._get_component_update_info(component_id)
                     if item["available"]:
                         updates.append(item)
@@ -649,8 +553,7 @@ class WebBridge(QObject):
             current = self.context.storage._detect_zapret2_version() or current
             releases = self.context.processes.list_zapret2_releases(limit=30)
         else:
-            current = self.context.storage._detect_tgws_version() or current
-            releases = self.context.processes.list_tg_ws_proxy_releases(limit=30)
+            releases = []
         latest = str(releases[0].get("version") or "") if releases else ""
         return {
             "id": component_id,
@@ -659,52 +562,6 @@ class WebBridge(QObject):
             "latestVersion": latest or "?",
             "available": bool(latest and latest.lstrip("vV").lower() != current.lstrip("vV").lower()),
         }
-
-    def _maybe_schedule_marketplace_update_check(self) -> None:
-        if self._marketplace_update_check_started or self.context is None:
-            return
-        self._marketplace_update_check_started = True
-        QTimer.singleShot(1600, lambda: self._start_marketplace_update_check(show_modal=True))
-
-    def _start_marketplace_update_check(self, *, show_modal: bool = True) -> None:
-        if self.context is None:
-            return
-        market = getattr(self.context, "marketplace", None)
-        if market is None:
-            return
-        if self._marketplace_update_check_busy:
-            return
-        self._marketplace_update_check_busy = True
-
-        def worker() -> None:
-            result: dict[str, Any] = {"ok": False, "updates": [], "notify": []}
-            try:
-                lang = str(self.context.settings.get().language or "ru")
-                result = market.check_updates(lang=lang if lang in {"ru", "en"} else "ru")
-            except Exception as error:
-                try:
-                    self.context.logging.log("error", "Marketplace update check failed", error=str(error))
-                except Exception:
-                    pass
-            finally:
-                self._marketplace_update_check_busy = False
-            self._schedule_on_gui(lambda: self._on_marketplace_update_check_done(result, show_modal=show_modal))
-
-        threading.Thread(target=worker, daemon=True, name="zapret-hub-marketplace-updates").start()
-
-    def _on_marketplace_update_check_done(self, result: dict[str, Any], *, show_modal: bool) -> None:
-        try:
-            self.emit_state(force=True)
-        except Exception:
-            pass
-        notify = result.get("notify") if isinstance(result, dict) else None
-        if not show_modal or not isinstance(notify, list) or not notify:
-            return
-        payload = {"updates": notify}
-        try:
-            self.event.emit("marketplace.updates-available", json.dumps(payload, ensure_ascii=False))
-        except Exception:
-            pass
 
     def _start_app_update_check(self, *, manual: bool) -> None:
         if self.context is None:
@@ -1173,7 +1030,6 @@ class WebBridge(QObject):
                 # Pin mode again — start_* must not flip Zapret ↔ Zapret2.
                 self.context.settings.update(
                     selected_runtime_mode=active_backend,
-                    goshkow_vpn_pending_start=False,
                 )
                 if active_backend == "zapret":
                     try:
@@ -1281,7 +1137,7 @@ class WebBridge(QObject):
             encoded = json.dumps(out, ensure_ascii=False)
         except Exception:
             encoded = json.dumps({"requestId": request_id, "ok": False, "error": "encode_failed"}, ensure_ascii=False)
-        self._schedule_on_gui(lambda e=encoded: self.event.emit("marketplace.result", e))
+        self._schedule_on_gui(lambda e=encoded: self.event.emit("async.result", e))
 
     def _dispatch_safe(self, command: str, payload: Any) -> None:
         try:
@@ -1307,10 +1163,6 @@ class WebBridge(QObject):
             if isinstance(cached, dict) and cached:
                 return cached
             return self.build_state()
-        if command == "marketplace.installed":
-            installed = self._build_marketplace_mods_payload()
-            self._merge_marketplace_mods_cache(installed)
-            return installed
         if command == "window.minimize":
             minimize = getattr(self.window, "fade_minimize", None)
             minimize() if callable(minimize) else self.window.showMinimized()
@@ -1337,23 +1189,6 @@ class WebBridge(QObject):
                 self._emit_runtime_status(self._peek_runtime_status())
                 return None
 
-            if runtime_id == "goshkow-vpn" and not self._vpn_is_configured():
-                self._emit_toast(
-                    "Сначала настройте VPN-подписку." if self._ru() else "Configure the VPN subscription first.",
-                    kind="warn",
-                    toast_id="vpn-setup-required",
-                )
-                try:
-                    self.event.emit("vpn.setup-required", json.dumps({"reason": "unconfigured"}, ensure_ascii=False))
-                except Exception:
-                    pass
-                restore = getattr(self.window, "restore_from_external_launch", None)
-                if callable(restore):
-                    self._schedule_on_gui(restore)
-                self._emit_runtime_status(self._peek_runtime_status())
-                self._schedule_on_gui(lambda: self.emit_state(force=True))
-                return None
-
             # Decide power BEFORE mutating selected mode. After update,
             # _runtime_is_powered_fast() would look at the NEW id (still stopped)
             # and skip the actual stop/start switch.
@@ -1374,13 +1209,11 @@ class WebBridge(QObject):
                 except Exception:
                     was_powered = False
 
-            # Selecting Zapret/Zapret2 must clear a stale VPN pending flag so autostart
-            # / admin-retry cannot rewrite the mode back to goshkow-vpn.
-            # Also sync enabled_component_ids so start_enabled_components / Auto cutover
+            # Sync enabled_component_ids so start_enabled_components / Auto cutover
             # cannot flip Quick Access back to the previous bypass.
             from zapret_hub.services.backend_worker import _sync_bypass_enabled_for_mode
 
-            if runtime_id in {"zapret", "zapret2", "none", "goshkow-vpn"}:
+            if runtime_id in {"zapret", "zapret2", "none"}:
                 _sync_bypass_enabled_for_mode(self.context, runtime_id)
             else:
                 self.context.settings.update(selected_runtime_mode=runtime_id)
@@ -1489,22 +1322,6 @@ class WebBridge(QObject):
             if enabled:
                 self._onboarding_configuration_cancelled = True
             runtime_now = str(self.context.settings.get().selected_runtime_mode or "zapret")
-            if enabled and runtime_now == "goshkow-vpn" and not self._vpn_is_configured():
-                self._emit_toast(
-                    "Сначала настройте VPN-подписку." if self._ru() else "Configure the VPN subscription first.",
-                    kind="warn",
-                    toast_id="vpn-setup-required",
-                )
-                try:
-                    self.event.emit("vpn.setup-required", json.dumps({"reason": "unconfigured"}, ensure_ascii=False))
-                except Exception:
-                    pass
-                restore = getattr(self.window, "restore_from_external_launch", None)
-                if callable(restore):
-                    self._schedule_on_gui(restore)
-                self._emit_runtime_status("off")
-                self._schedule_on_gui(lambda: self.emit_state(force=True))
-                return None
             with self._power_lock:
                 self._power_desired = enabled
                 self._power_runtime_id = runtime_now
@@ -1523,9 +1340,6 @@ class WebBridge(QObject):
             enabled_ids.add(component_id) if enabled else enabled_ids.discard(component_id)
             self.context.settings.update(enabled_component_ids=sorted(enabled_ids))
             self._queue_component_toggle(component_id, enabled)
-            return None
-        if command == "tg.connect":
-            self._run_background(self._connect_telegram_proxy)
             return None
         if command == "services.set":
             selected = [str(item) for item in (payload or {}).get("selected", [])]
@@ -1691,7 +1505,7 @@ class WebBridge(QObject):
             self._cached_generals = None
             self._cached_file_entries = None
             self.emit_state(force=True)
-            return self._build_marketplace_mods_payload()
+            return self._mods_payload()
         if command == "mods.reorder":
             ordered = [str(item) for item in ((payload or {}).get("orderedIds") or [])]
             # Rebuilding merged runtime can touch many files. Persist the order
@@ -1765,21 +1579,13 @@ class WebBridge(QObject):
             self._reconfigure_runtimes(("zapret2",), lambda: self.context.mods2.remove(mod_id))
             self._cached_file2_entries = None
             self.emit_state(force=True)
-            return self._build_marketplace_mods_payload()
+            return self._mods_payload()
         if command == "mods2.reorder":
             ordered = [str(item) for item in ((payload or {}).get("orderedIds") or [])]
             self.context.mods2.reorder(ordered, rebuild=False)
             self._queue_mod_runtime_refresh("zapret2")
             self._cached_file2_entries = None
             self.emit_state(force=True)
-            return None
-        if command == "marketplace.repair-covers":
-            def repair_covers() -> None:
-                repaired = self.context.marketplace.repair_installed_covers(lang="ru" if self._ru() else "en")
-                if repaired:
-                    self._schedule_on_gui(lambda: self.emit_state(force=True))
-
-            threading.Thread(target=repair_covers, daemon=True, name="zapret-hub-marketplace-cover-repair").start()
             return None
         if command == "mods2.edit":
             mod_id = str((payload or {}).get("id", ""))
@@ -1854,14 +1660,10 @@ class WebBridge(QObject):
             targets = {
                 "app": [self.context.logging.log_path],
                 "zapret": [self.context.logging.zapret_log_path],
-                "vpn": [self.context.logging.vpn_log_path],
-                "tg": [self.context.logging.tg_log_path],
             }
             paths = targets.get(source, [
                 self.context.logging.log_path,
                 self.context.logging.zapret_log_path,
-                self.context.logging.vpn_log_path,
-                self.context.logging.tg_log_path,
             ])
             for path in paths:
                 Path(path).write_text("", encoding="utf-8")
@@ -1953,23 +1755,6 @@ class WebBridge(QObject):
 
             threading.Thread(target=_stop, daemon=True, name="zapret-hub-onboarding-cancel").start()
             return None
-        if command == "vpn.import-subscription":
-            url = str((payload or {}).get("url", "") or "").strip()
-            vpn_state = self.context.vpn.import_subscription(url)
-            if str(vpn_state.get("subscription_state", "") or "") != "valid":
-                raise RuntimeError(
-                    str(vpn_state.get("last_error", "") or "Не удалось проверить подписку goshkow VPN.")
-                )
-            self.context.settings.update(
-                goshkow_vpn_subscription_url=str(vpn_state.get("subscription_url", "") or ""),
-                goshkow_vpn_tun_enabled=bool(vpn_state.get("tun_enabled", True)),
-                goshkow_vpn_routing_mode=str(vpn_state.get("routing_mode", "global") or "global"),
-                goshkow_vpn_rules_mode=str(vpn_state.get("rules_mode", "blacklist") or "blacklist"),
-                goshkow_vpn_system_proxy_mode=str(vpn_state.get("system_proxy_mode", "set") or "set"),
-                goshkow_vpn_processes=str(vpn_state.get("processes", "") or ""),
-                goshkow_vpn_processes_exclude_mode=bool(vpn_state.get("processes_exclude_mode", False)),
-            )
-            return {"subscriptionState": "valid"}
         if command == "component.check-update":
             component_id = str((payload or {}).get("id", ""))
             request_id = str((payload or {}).get("requestId", ""))
@@ -1985,7 +1770,7 @@ class WebBridge(QObject):
             return None
         if command == "component.install-updates-all":
             ids = {str(item) for item in ((payload or {}).get("ids") or [])}
-            for component_id in ("zapret", "zapret2", "tg-ws-proxy"):
+            for component_id in ("zapret", "zapret2"):
                 if component_id in ids:
                     self._run_component_update(component_id)
             return None
@@ -2013,146 +1798,8 @@ class WebBridge(QObject):
             schedule_only = bool((payload or {}).get("scheduleNextLaunch"))
             self._start_app_update_apply(schedule_only=schedule_only)
             return None
-        if command == "marketplace.list":
-            data = dict(payload or {})
-            lang = str(self.context.settings.get().language or "ru")
-            return self.context.marketplace.list_projects(
-                q=str(data.get("q") or ""),
-                compatibility=str(data.get("compatibility") or ""),
-                category=str(data.get("category") or ""),
-                sort=str(data.get("sort") or "relevance"),
-                page=int(data.get("page") or 1),
-                limit=int(data.get("limit") or 20),
-                lang=lang if lang in {"ru", "en"} else "ru",
-                refresh=bool(data.get("refresh")),
-            )
-        if command == "marketplace.get":
-            slug = str((payload or {}).get("slug") or "")
-            lang = str(self.context.settings.get().language or "ru")
-            return self.context.marketplace.get_project(slug, lang=lang if lang in {"ru", "en"} else "ru")
-        if command == "marketplace.image":
-            return self.context.marketplace.load_image_data_url(str((payload or {}).get("url") or ""))
-        if command == "marketplace.download":
-            data = dict(payload or {})
-            version_id = data.get("versionId")
-            vid = int(version_id) if version_id not in (None, "", False) else None
-            result = self.context.marketplace.enqueue_download(
-                str(data.get("slug") or ""),
-                version_id=vid,
-                title=str(data.get("title") or ""),
-                compatibility=str(data.get("compatibility") or ""),
-                author=str(data.get("author") or ""),
-                summary=str(data.get("summary") or ""),
-                icon_url=str(data.get("iconUrl") or ""),
-                project_url=str(data.get("projectUrl") or ""),
-                marketplace_version=str(data.get("marketplaceVersion") or data.get("latestVersion") or ""),
-                allow_update=bool(data.get("allowUpdate") or data.get("update")),
-            )
-            pending = result.get("pending") if isinstance(result.get("pending"), list) else []
-            if result.get("alreadyQueued"):
-                self._emit_toast(
-                    "Уже в очереди загрузки." if self._ru() else "Already in download queue.",
-                    kind="info",
-                    toast_id=f"mp-queue-{result.get('slug')}",
-                )
-            elif result.get("alreadyInstalled"):
-                self._emit_toast(
-                    "\u041c\u043e\u0434\u0438\u0444\u0438\u043a\u0430\u0446\u0438\u044f \u0443\u0436\u0435 \u0443\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d\u0430." if self._ru() else "This modification is already installed.",
-                    kind="info",
-                    toast_id=f"mp-installed-{result.get('slug')}",
-                )
-            elif result.get("updating"):
-                self._emit_toast(
-                    (
-                        "Обновление: удаляем старую версию и скачиваем заново…"
-                        if self._ru()
-                        else "Updating: removing the old version and re-downloading…"
-                    ),
-                    kind="info",
-                    toast_id=f"mp-update-{result.get('slug')}",
-                )
-            elif len(pending) > 1:
-                self._emit_toast(
-                    "Добавлено в очередь загрузки." if self._ru() else "Queued for download.",
-                    kind="info",
-                    toast_id=f"mp-queue-{result.get('slug')}",
-                )
-            return result
-        if command == "marketplace.remove":
-            slug = str((payload or {}).get("slug") or "")
-            result = self._reconfigure_runtimes(
-                ("zapret", "zapret2"),
-                lambda: self.context.marketplace.remove_installed(slug),
-            )
-            self._cached_generals = None
-            self._cached_file_entries = None
-            self._cached_file2_entries = None
-            installed = self._build_marketplace_mods_payload()
-            self._merge_marketplace_mods_cache(installed)
-            self._schedule_on_gui(lambda: self.emit_state(force=True))
-            return {**result, **installed}
-        if command == "marketplace.queue":
-            return self.context.marketplace.queue_status()
-        if command == "marketplace.cancel":
-            data = dict(payload or {})
-            return self.context.marketplace.cancel_download(
-                str(data.get("slug") or ""),
-                job_id=str(data.get("jobId") or ""),
-            )
-        if command == "marketplace.pause":
-            data = dict(payload or {})
-            return self.context.marketplace.pause_download(
-                str(data.get("slug") or ""),
-                job_id=str(data.get("jobId") or ""),
-            )
-        if command == "marketplace.resume":
-            data = dict(payload or {})
-            return self.context.marketplace.resume_download(
-                str(data.get("slug") or ""),
-                job_id=str(data.get("jobId") or ""),
-            )
-        if command == "marketplace.reorder-queue":
-            data = dict(payload or {})
-            ordered = data.get("orderedSlugs") if isinstance(data.get("orderedSlugs"), list) else []
-            return self.context.marketplace.reorder_queue([str(item) for item in ordered])
-        if command == "marketplace.check-updates":
-            lang = str(self.context.settings.get().language or "ru")
-            result = self.context.marketplace.check_updates(lang=lang if lang in {"ru", "en"} else "ru")
-            self._schedule_on_gui(lambda: self.emit_state(force=True))
-            return result
-        if command == "marketplace.updates-status":
-            return self.context.marketplace.updates_status()
-        if command == "marketplace.dismiss-updates":
-            data = dict(payload or {})
-            items = data.get("updates") if isinstance(data.get("updates"), list) else []
-            return self.context.marketplace.dismiss_updates(items)
-        if command == "marketplace.open-url":
-            url = str((payload or {}).get("url") or "").strip()
-            if url.startswith(("http://", "https://")):
-                QDesktopServices.openUrl(QUrl(url))
-            return None
         if command == "zapret.rebuild-runtime":
             self._run_background(self.context.processes.rebuild_zapret_runtime_snapshot)
-            return None
-        if command == "vpn.refresh-subscription":
-            self._run_background(self.context.vpn.refresh_subscription)
-            return None
-        if command == "vpn.select-server":
-            server_id = str((payload or {}).get("id", "auto") or "auto")
-            self.context.vpn.update_settings({"selected_server_id": server_id})
-
-            def _vpn_select_bg() -> None:
-                try:
-                    self._reconfigure_runtimes(("goshkow-vpn",), lambda: None)
-                except Exception as error:
-                    try:
-                        self.context.logging.log("error", "vpn.select-server failed", error=str(error))
-                    except Exception:
-                        pass
-                finally:
-                    self.emit_state(force=True)
-
-            threading.Thread(target=_vpn_select_bg, daemon=True, name="zapret-hub-vpn-select").start()
             return None
         if command == "component.configure":
             if str((payload or {}).get("id", "")) == "zapret":
@@ -2165,6 +1812,11 @@ class WebBridge(QObject):
             if source.startswith(("http://", "https://")):
                 QDesktopServices.openUrl(QUrl(source))
             return None
+        if command == "ui.open-url":
+            url = str((payload or {}).get("url", "") or "")
+            if url.startswith(("http://", "https://")):
+                QDesktopServices.openUrl(QUrl(url))
+            return None
         raise ValueError(f"Unsupported web command: {command}")
 
     def _apply_selected_services(self, selected: list[str], *, emit: bool = True) -> None:
@@ -2175,28 +1827,20 @@ class WebBridge(QObject):
             settings = self.context.settings.get()
             enabled_ids = {str(item) for item in settings.enabled_component_ids or []}
             autostart_ids = {str(item) for item in settings.autostart_component_ids or []}
-            bypass_services = set(ordered) - {"telegram-desktop", "ai"}
+            bypass_services = set(ordered) - {"ai"}
             active_backend = str(getattr(settings, "selected_runtime_mode", "zapret") or "zapret")
             if bypass_services:
                 if active_backend == "zapret2":
                     enabled_ids.add("zapret2")
                     enabled_ids.discard("zapret")
-                    enabled_ids.discard("goshkow-vpn")
                 else:
                     enabled_ids.add("zapret")
                     enabled_ids.discard("zapret2")
-                    enabled_ids.discard("goshkow-vpn")
             else:
                 enabled_ids.discard("zapret")
                 enabled_ids.discard("zapret2")
                 autostart_ids.discard("zapret")
                 autostart_ids.discard("zapret2")
-            if "telegram-desktop" in ordered:
-                enabled_ids.add("tg-ws-proxy")
-                autostart_ids.add("tg-ws-proxy")
-            else:
-                enabled_ids.discard("tg-ws-proxy")
-                autostart_ids.discard("tg-ws-proxy")
             if "ai" in ordered:
                 enabled_ids.add("xbox-dns")
             else:
@@ -2214,18 +1858,17 @@ class WebBridge(QObject):
             self.context.files._invalidate_collection_cache()
             self.context.files.rebuild_materialized_collections()
 
-        bypass_services = set(ordered) - {"telegram-desktop", "ai"}
+        bypass_services = set(ordered) - {"ai"}
         active_backend = str(getattr(self.context.settings.get(), "selected_runtime_mode", "zapret") or "zapret")
         if active_backend not in {"zapret", "zapret2"}:
             active_backend = "zapret"
         # Only restart the selected Quick Access bypass — never the other one.
         # Also restart TG/DNS when their enable flags change under live power.
         self._reconfigure_runtimes(
-            (active_backend, "tg-ws-proxy", "xbox-dns"),
+            (active_backend, "xbox-dns"),
             apply,
             restart_allowed={
                 active_backend: bool(bypass_services),
-                "tg-ws-proxy": "telegram-desktop" in ordered,
                 "xbox-dns": "ai" in ordered,
             },
         )
@@ -2301,7 +1944,7 @@ class WebBridge(QObject):
         shows starting/stopping so the power button reflects the transition.
         Never leaves two winws/winws2 copies running.
         """
-        if component_id in {"zapret", "zapret2", "goshkow-vpn"}:
+        if component_id in {"zapret", "zapret2"}:
             try:
                 self.context.processes.stop_running_bypass_copies(component_id)
             except Exception:
@@ -2349,7 +1992,7 @@ class WebBridge(QObject):
             self._runtime_transition_status = "starting"
             self._emit_runtime_status("starting")
 
-        if component_id in {"zapret", "zapret2", "goshkow-vpn"}:
+        if component_id in {"zapret", "zapret2"}:
             try:
                 self.context.processes.stop_running_bypass_copies(component_id)
             except Exception:
@@ -2404,10 +2047,10 @@ class WebBridge(QObject):
                     continue
                 if running[component_id]:
                     should_restart[component_id] = True
-                elif want_power and component_id == active and component_id in {"zapret", "zapret2", "goshkow-vpn"}:
+                elif want_power and component_id == active and component_id in {"zapret", "zapret2"}:
                     should_restart[component_id] = True
-                elif want_power and component_id in {"tg-ws-proxy", "xbox-dns"}:
-                    # restart_allowed already says whether TG/DNS should be on after apply.
+                elif want_power and component_id == "xbox-dns":
+                    # restart_allowed already says whether DNS should be on after apply.
                     should_restart[component_id] = True
                 else:
                     should_restart[component_id] = False
@@ -2496,12 +2139,12 @@ class WebBridge(QObject):
                                 component_id,
                                 show_transition_on_retry=want_power,
                             )
-                        if not ok and component_id in {"zapret", "zapret2", "goshkow-vpn"}:
+                        if not ok and component_id in {"zapret", "zapret2"}:
                             restart_ok = False
                     if want_power and any(
                         should_restart.get(cid)
                         for cid in component_ids
-                        if cid in {"zapret", "zapret2", "goshkow-vpn"}
+                        if cid in {"zapret", "zapret2"}
                     ):
                         try:
                             self._set_auxiliary_components_power_async(True)
@@ -2677,7 +2320,7 @@ class WebBridge(QObject):
                         return
                     desired = self._component_toggle_desired.pop(component_id)
                 try:
-                    aux = component_id in {"tg-ws-proxy", "xbox-dns"}
+                    aux = component_id == "xbox-dns"
                     if desired:
                         # Optional components only start when the main power is on.
                         if aux and not self._runtime_aux_should_run():
@@ -2822,29 +2465,13 @@ class WebBridge(QObject):
         # Avoid process scans on the click path — keep last known power label.
         return str(self._last_runtime_status or "off")
 
-    def _vpn_is_configured(self) -> bool:
-        """Same rule as ui.hasValidVpnKey — subscription valid or URL present."""
-        try:
-            settings = self.context.settings.get()
-            if bool(str(getattr(settings, "goshkow_vpn_subscription_url", "") or "").strip()):
-                return True
-            vpn_state = self.context.vpn.state()
-            return str(vpn_state.get("subscription_state", "") or "") == "valid" or bool(
-                str(vpn_state.get("subscription_url", "") or "").strip()
-            )
-        except Exception:
-            return False
-
     def _emit_state_if_select_gen(self, gen: int) -> None:
         if gen != self._runtime_select_gen:
             return
         self.emit_state()
 
     def _start_component(self, component_id: str) -> Any:
-        result = self.context.processes.start_component(component_id)
-        if component_id == "tg-ws-proxy":
-            self._notify_telegram_proxy_result()
-        return result
+        return self.context.processes.start_component(component_id)
 
     def _set_no_bypass_power(self, enabled: bool) -> None:
         self.context.settings.update(no_bypass_power_enabled=enabled)
@@ -2854,33 +2481,7 @@ class WebBridge(QObject):
         """Start/stop optional components that follow the main power button."""
         settings = self.context.settings.get()
         enabled_ids = {str(item) for item in (settings.enabled_component_ids or [])}
-        # TG WS Proxy — follows power when enabled in Components.
-        if enabled and "tg-ws-proxy" in enabled_ids:
-            try:
-                # Surface "starting" in Quick Access before the listen wait finishes.
-                try:
-                    from zapret_hub.domain import ComponentState
-
-                    self.context.processes._states["tg-ws-proxy"] = ComponentState(
-                        component_id="tg-ws-proxy",
-                        status="starting",
-                    )
-                    self.context.processes._invalidate_state_cache()
-                    self.emit_state(force=True)
-                except Exception:
-                    pass
-                self._start_component("tg-ws-proxy")
-            except Exception as error:
-                try:
-                    self.context.logging.log("error", "Failed to start tg-ws-proxy with runtime", error=str(error))
-                except Exception:
-                    pass
-        else:
-            try:
-                self.context.processes.stop_component("tg-ws-proxy")
-            except Exception:
-                pass
-        # DNS (xbox-dns) — same policy; stop on power-off even if profile is dhcp.
+        # DNS (xbox-dns) — follows power when enabled in Components.
         if enabled and "xbox-dns" in enabled_ids:
             try:
                 self._start_component("xbox-dns")
@@ -2920,39 +2521,6 @@ class WebBridge(QObject):
             return bool(self._want_runtime_power())
         except Exception:
             return False
-
-    def _connect_telegram_proxy(self) -> None:
-        self.context.processes.prompt_telegram_proxy_link()
-        self._notify_telegram_proxy_result()
-
-    def _notify_telegram_proxy_result(self) -> None:
-        # Only react to a connect attempt from this start. Empty info means TG proxy
-        # started without prompting (already configured) — never spam "open Telegram".
-        info = self.context.processes.consume_telegram_proxy_launch_info()
-        if not isinstance(info, dict) or not info:
-            return
-        if info.get("running_before") or info.get("running_after") or info.get("link_opened"):
-            return
-        if not info.get("missing"):
-            return
-        try:
-            if self.context.processes._is_telegram_running():
-                return
-        except Exception:
-            pass
-        language = str(self.context.settings.get().language or "ru")
-        message = (
-            "Запустите Telegram, затем откройте «Компоненты» и нажмите «Подключить Telegram» в TG WS Proxy."
-            if language == "ru"
-            else "Start Telegram, then open Components and click Connect Telegram in TG WS Proxy."
-        )
-        self.context.notifications.add(
-            "warn",
-            "TG WS Proxy",
-            message,
-            source="tg-ws-proxy",
-            details={"dedupe_key": "tg-ws-proxy-connect-telegram"},
-        )
 
     def _file_target(self, kind: str, name: str = "") -> Path:
         mapping = {
@@ -3102,25 +2670,16 @@ class WebBridge(QObject):
                     fill_versions(self.context.processes.list_zapret_releases(limit=30), current_version=current)
                     if not versions:
                         latest = str(self.context.processes.fetch_latest_zapret_release().get("latest_version", "") or "")
-                elif component_id == "tg-ws-proxy":
-                    current = self.context.storage._detect_tgws_version() or current
-                    fill_versions(self.context.processes.list_tg_ws_proxy_releases(limit=30), current_version=current)
-                    if not versions:
-                        latest = str(self.context.processes.fetch_latest_tg_ws_proxy_release().get("latest_version", "") or "")
                 elif component_id == "zapret2":
                     current = self.context.storage._detect_zapret2_version() or current
                     fill_versions(self.context.processes.list_zapret2_releases(limit=30), current_version=current)
                     if not versions:
                         latest = str(self.context.processes.fetch_latest_zapret2_release().get("latest_version", "") or "")
-                elif component_id == "goshkow-vpn":
-                    latest = "актуальная подписка"
                 else:
                     latest = current
             except Exception as exception:
                 error = str(exception)
             available = not error and bool(latest) and latest.lstrip("vV") != current.lstrip("vV")
-            if component_id == "goshkow-vpn" and not error:
-                available = True
             self.event.emit(
                 "component.update-check",
                 json.dumps(
@@ -3153,15 +2712,9 @@ class WebBridge(QObject):
                 return self.context.processes.install_zapret2_version(wanted)
             return self.context.processes.update_zapret2_runtime()
 
-        def tg_action() -> dict[str, str]:
-            if wanted:
-                return self.context.processes.install_tg_ws_proxy_version(wanted)
-            return self.context.processes.update_tg_ws_proxy_runtime()
-
         actions = {
             "zapret": zapret_action,
             "zapret2": zapret2_action,
-            "tg-ws-proxy": tg_action,
         }
         action = actions.get(component_id)
         if action is None:
@@ -3328,7 +2881,7 @@ class WebBridge(QObject):
                 # Also restore after cancel — abort_diagnostics must not leave power dead.
                 if keep_power:
                     try:
-                        if restore_runtime in {"zapret", "zapret2", "goshkow-vpn"}:
+                        if restore_runtime in {"zapret", "zapret2"}:
                             self.context.processes.start_component(restore_runtime)
                             self._set_auxiliary_components_power_async(True)
                             self._runtime_transition_status = None
@@ -3385,11 +2938,10 @@ class WebBridge(QObject):
     def _set_runtime_power(self, runtime_id: str, enabled: bool) -> None:
         if enabled:
             if runtime_id == "none":
-                # No bypass: clear any leftover winws / vpn copies first.
+                # No bypass: clear any leftover winws copies first.
                 try:
                     self.context.processes.stop_running_bypass_copies("zapret")
                     self.context.processes.stop_running_bypass_copies("zapret2")
-                    self.context.processes.stop_running_bypass_copies("goshkow-vpn")
                 except Exception:
                     pass
                 self._set_no_bypass_power(True)
@@ -3438,26 +2990,6 @@ class WebBridge(QObject):
         )
         zapret2_cli_before = zapret2_before[:4] + zapret2_before[5:]
         zapret2_strategy_before = zapret2_before[4]
-        tg_before = (
-            before.tg_proxy_host,
-            before.tg_proxy_port,
-            before.tg_proxy_secret,
-            before.tg_proxy_dc_ip,
-            before.tg_proxy_cfproxy_enabled,
-            before.tg_proxy_cfproxy_priority,
-            before.tg_proxy_cfproxy_domain,
-            before.tg_proxy_fake_tls_domain,
-            before.tg_proxy_buf_kb,
-            before.tg_proxy_pool_size,
-        )
-        vpn_before = (
-            str(getattr(before, "goshkow_vpn_subscription_url", "") or ""),
-            bool(getattr(before, "goshkow_vpn_tun_enabled", True)),
-            str(getattr(before, "goshkow_vpn_routing_mode", "") or ""),
-            str(getattr(before, "goshkow_vpn_system_proxy_mode", "") or ""),
-            str(getattr(before, "goshkow_vpn_processes", "") or ""),
-            bool(getattr(before, "goshkow_vpn_processes_exclude_mode", False)),
-        )
         changes: dict[str, Any] = {}
         aliases = {
             "autoStart": "autostart_windows",
@@ -3521,46 +3053,12 @@ class WebBridge(QObject):
                 self._set_orchestrator_mode(
                     str(zapret2.get("controlMode") or "manual"), backend="zapret2", emit_state=False
                 )
-        tg = patch.get("tg")
-        if isinstance(tg, dict):
-            tg_aliases = {
-                "host": "tg_proxy_host", "port": "tg_proxy_port", "secret": "tg_proxy_secret",
-                "dcIp": "tg_proxy_dc_ip", "cfProxyEnabled": "tg_proxy_cfproxy_enabled",
-                "cfProxyPriority": "tg_proxy_cfproxy_priority", "cfProxyDomain": "tg_proxy_cfproxy_domain",
-                "fakeTlsDomain": "tg_proxy_fake_tls_domain", "bufferKb": "tg_proxy_buf_kb", "poolSize": "tg_proxy_pool_size",
-            }
-            for source, target in tg_aliases.items():
-                if source in tg:
-                    changes[target] = tg[source]
-        vpn = patch.get("vpn")
-        if isinstance(vpn, dict):
-            vpn_aliases = {
-                "subscriptionUrl": "goshkow_vpn_subscription_url", "tunEnabled": "goshkow_vpn_tun_enabled",
-                "routingMode": "goshkow_vpn_routing_mode", "systemProxyMode": "goshkow_vpn_system_proxy_mode",
-                "processes": "goshkow_vpn_processes", "processesExcludeMode": "goshkow_vpn_processes_exclude_mode",
-            }
-            for source, target in vpn_aliases.items():
-                if source in vpn:
-                    changes[target] = vpn[source]
         if changes:
             if "ui_scale" in changes and str(changes.get("ui_scale") or "") not in {"0.75", "1", "1.25"}:
                 changes["ui_scale"] = "1"
             self.context.settings.update(**changes)
         if "autoStart" in patch:
             self.context.autostart.set_enabled(bool(patch["autoStart"]))
-        if isinstance(vpn, dict):
-            subscription_url = str(vpn.get("subscriptionUrl", "") or "").strip()
-            current_vpn = self.context.vpn.state()
-            if subscription_url != str(current_vpn.get("subscription_url", "") or ""):
-                self.context.vpn.import_subscription(subscription_url)
-            self.context.vpn.update_settings({
-                "selected_server_id": str(vpn.get("selectedServerId", current_vpn.get("selected_server_id", "auto"))),
-                "tun_enabled": bool(vpn.get("tunEnabled", True)),
-                "routing_mode": str(vpn.get("routingMode", "global")),
-                "system_proxy_mode": str(vpn.get("systemProxyMode", "pac")),
-                "processes": str(vpn.get("processes", "")),
-                "processes_exclude_mode": bool(vpn.get("processesExcludeMode", False)),
-            })
 
         want_power = self._want_runtime_power()
         after = self.context.settings.get()
@@ -3581,26 +3079,6 @@ class WebBridge(QObject):
         )
         zapret2_cli_after = zapret2_after[:4] + zapret2_after[5:]
         zapret2_strategy_after = zapret2_after[4]
-        tg_after = (
-            after.tg_proxy_host,
-            after.tg_proxy_port,
-            after.tg_proxy_secret,
-            after.tg_proxy_dc_ip,
-            after.tg_proxy_cfproxy_enabled,
-            after.tg_proxy_cfproxy_priority,
-            after.tg_proxy_cfproxy_domain,
-            after.tg_proxy_fake_tls_domain,
-            after.tg_proxy_buf_kb,
-            after.tg_proxy_pool_size,
-        )
-        vpn_after = (
-            str(getattr(after, "goshkow_vpn_subscription_url", "") or ""),
-            bool(getattr(after, "goshkow_vpn_tun_enabled", True)),
-            str(getattr(after, "goshkow_vpn_routing_mode", "") or ""),
-            str(getattr(after, "goshkow_vpn_system_proxy_mode", "") or ""),
-            str(getattr(after, "goshkow_vpn_processes", "") or ""),
-            bool(getattr(after, "goshkow_vpn_processes_exclude_mode", False)),
-        )
         active = str(getattr(after, "selected_runtime_mode", "zapret") or "zapret")
         enabled_ids = {str(item) for item in (after.enabled_component_ids or [])}
         # Background restart while Quick Access stays visually on.
@@ -3619,15 +3097,6 @@ class WebBridge(QObject):
                     except Exception:
                         pass
                     self._reconfigure_runtimes(("zapret2",), lambda: None)
-        if tg_before != tg_after and (
-            self._component_running("tg-ws-proxy") or (want_power and "tg-ws-proxy" in enabled_ids)
-        ):
-            self._reconfigure_runtimes(("tg-ws-proxy",), lambda: None)
-        if vpn_before != vpn_after and active == "goshkow-vpn" and (
-            self._component_running("goshkow-vpn") or want_power
-        ):
-            self._reconfigure_runtimes(("goshkow-vpn",), lambda: None)
-
     def emit_state(self, *, force: bool = False) -> None:
         # During onboarding the UI uses local/event state. Pushing a full
         # state.changed mid-transition freezes step animations in WebEngine.
@@ -3763,8 +3232,6 @@ class WebBridge(QObject):
             source = {
                 "zapret": "zapret",
                 "zapret2": "zapret2",
-                "goshkow-vpn": "vpn",
-                "tg-ws-proxy": "tg",
             }.get(component_id, "app")
             try:
                 raw = str(entry.timestamp or "").strip()
@@ -3789,16 +3256,13 @@ class WebBridge(QObject):
                 }
             )
 
-        # Merge process stdout/stderr tails (TG proxy, Zapret, VPN). These are plain
-        # text files — never written into app.log JSON — so without this the UI is empty
-        # when running "без обходов" + TG proxy (only hub lines would appear as "app").
+        # Merge process stdout/stderr tails (Zapret, Zapret2). These are plain
+        # text files — never written into app.log JSON — so without this the UI is
+        # empty when running "без обходов" (only hub lines would appear as "app").
         seen_messages: set[tuple[str, str]] = {(str(item.get("source")), str(item.get("message"))) for item in result}
         plain_sources = (
-            ("tg", "tg_ws_proxy.log", 180),
-            ("tg", "tg_worker_error.log", 60),
             ("zapret", "zapret.log", 180),
             ("zapret2", "zapret2.log", 180),
-            ("vpn", "goshkow_vpn.log", 180),
         )
         ordinal = len(result)
         for ui_source, filename, limit in plain_sources:
@@ -3860,68 +3324,43 @@ class WebBridge(QObject):
             pass
         return 0
 
-    def _build_marketplace_mods_payload(self) -> dict[str, list[dict[str, Any]]]:
-        """Build only installed-mod data for a lightweight Marketplace refresh."""
+    def _installed_mods_payload(self, runtime: str) -> list[dict[str, Any]]:
+        """Installed-mod data for the Mods pages (marketplace removed)."""
+        manager = self.context.mods if runtime == "zapret" else self.context.mods2
         settings = self.context.settings.get()
-        try:
-            update_by_slug = {
-                str(item.get("slug") or ""): item
-                for item in (self.context.marketplace.updates_status().get("updates") or [])
-                if isinstance(item, dict) and item.get("slug")
-            }
-        except Exception:
-            update_by_slug = {}
-
-        def _common(item: Any, compatibility: str) -> dict[str, Any]:
-            slug = str(getattr(item, "marketplace_slug", "") or "")
-            update = update_by_slug.get(slug) or {}
-            return {
-                "id": item.id,
-                "name": item.name or item.id,
-                "author": item.author,
-                "description": item.description,
-                "createdAt": int(time.time() * 1000),
-                "iconUrl": self._mod_cover_url(item),
-                "marketplaceSlug": slug,
-                "sourceUrl": str(getattr(item, "source_url", "") or ""),
-                "version": item.version,
-                "compatibility": compatibility,
-                "updateAvailable": bool(update),
-                "latestVersion": str(update.get("latestVersion") or ""),
-                "updateChangelog": str(update.get("changelog") or ""),
-                "versionId": update.get("versionId"),
-                "diskSize": self._mod_disk_size(item),
-            }
-
-        mods = []
-        for item in self.context.mods.list_installed():
-            entry = _common(item, "zapret")
-            entry.update(
+        enabled_ids = {
+            str(item)
+            for item in (
+                settings.enabled_mod_ids if runtime == "zapret" else getattr(settings, "enabled_zapret2_mod_ids", None) or []
+            )
+        }
+        result: list[dict[str, Any]] = []
+        for item in manager.list_installed():
+            result.append(
                 {
-                    "enabled": bool(item.enabled or item.id in (settings.enabled_mod_ids or [])),
-                    "compatibleFiles": ["general"],
-                    "source": "github" if item.source_url else "folder",
+                    "id": item.id,
+                    "name": item.name or item.id,
+                    "author": item.author,
+                    "description": item.description,
+                    "createdAt": int(time.time() * 1000),
+                    "iconUrl": self._mod_cover_url(item),
+                    "sourceUrl": str(getattr(item, "source_url", "") or ""),
+                    "version": item.version,
+                    "enabled": bool(item.enabled or item.id in enabled_ids),
+                    "diskSize": self._mod_disk_size(item),
+                    "compatibility": "zapret" if runtime == "zapret" else "zapret2",
                 }
             )
-            mods.append(entry)
+        return result
 
-        mods2 = []
-        for item in self.context.mods2.list_installed():
-            entry = _common(item, "zapret2")
-            entry.update(
-                {
-                    "enabled": bool(item.enabled or item.id in (getattr(settings, "enabled_zapret2_mod_ids", None) or [])),
-                    "compatibleFiles": ["domains", "ip-lists", "advanced"],
-                    "source": "folder",
-                    "runtime": "zapret2",
-                }
-            )
-            mods2.append(entry)
-        return {"mods": mods, "mods2": mods2}
+    def _mods_payload(self) -> dict[str, list[dict[str, Any]]]:
+        return {
+            "mods": self._installed_mods_payload("zapret"),
+            "mods2": self._installed_mods_payload("zapret2"),
+        }
 
     def build_state(self) -> dict[str, Any]:
         settings = self.context.settings.get()
-        vpn_state = self.context.vpn.state()
         definitions = {item.id: item for item in self.context.processes.list_components()}
         states = {item.component_id: item for item in self.context.processes.list_states()}
         components: dict[str, dict[str, Any]] = {}
@@ -3934,14 +3373,6 @@ class WebBridge(QObject):
             "zapret2": (
                 "Новое поколение zapret с winws2 и Lua-стратегиями.",
                 "Next-generation zapret powered by winws2 and Lua strategies.",
-            ),
-            "goshkow-vpn": (
-                "VPN-подписка без ограничений по трафику и количеству устройств.",
-                "VPN subscription with unlimited traffic and devices.",
-            ),
-            "tg-ws-proxy": (
-                "Прокси для Telegram через локальное подключение.",
-                "A Telegram proxy using a local connection.",
             ),
             "xbox-dns": (
                 "Системные DNS-серверы с выбором провайдера.",
@@ -3975,13 +3406,13 @@ class WebBridge(QObject):
                         "config": str(getattr(settings, "dns_profile", "xbox") or "xbox").upper(),
                     }
                 )
-            if component_id in {"goshkow-vpn", "xbox-dns"}:
+            if component_id == "xbox-dns":
                 components[component_id]["version"] = ""
             elif component_id == "zapret2" and str(components[component_id]["version"]).lower() in {"", "master"}:
                 components[component_id]["version"] = "1.0.4"
         runtime_id = str(settings.selected_runtime_mode or "zapret")
         if runtime_id == "none":
-            auxiliary = [components.get(item, {}).get("status", "off") for item in ("tg-ws-proxy", "xbox-dns")]
+            auxiliary = [components.get("xbox-dns", {}).get("status", "off")]
             runtime_status = (
                 "error" if any(item == "error" for item in auxiliary)
                 else "starting" if any(item == "starting" for item in auxiliary)
@@ -3999,9 +3430,8 @@ class WebBridge(QObject):
         ):
             # Brief gap while a powered bypass restarts — don't flicker the button off.
             runtime_status = self._last_runtime_status
-        marketplace_mods = self._build_marketplace_mods_payload()
-        mods = marketplace_mods["mods"]
-        mods2 = marketplace_mods["mods2"]
+        mods = self._installed_mods_payload("zapret")
+        mods2 = self._installed_mods_payload("zapret2")
         notifications = [
             {
                 "id": item.id,
@@ -4016,7 +3446,7 @@ class WebBridge(QObject):
         return {
             "runtime": {
                 "active": runtime_id,
-                "order": list(settings.runtime_mode_order or ["zapret", "goshkow-vpn", "zapret2", "none"]),
+                "order": list(settings.runtime_mode_order or ["zapret", "zapret2", "none"]),
                 "status": runtime_status,
             },
             "services": {
@@ -4077,31 +3507,6 @@ class WebBridge(QObject):
                     "strategyId": str(getattr(settings, "zapret2_strategy_id", "balanced") or "balanced"),
                     "youtubeDiscordBypass": bool(getattr(settings, "zapret2_youtube_discord_bypass", True)),
                 },
-                "vpn": {
-                    "subscriptionUrl": str(vpn_state.get("subscription_url", "") or settings.goshkow_vpn_subscription_url),
-                    "subscriptionState": str(vpn_state.get("subscription_state", "empty")),
-                    "selectedServerId": str(vpn_state.get("selected_server_id", "") or "auto"),
-                    "servers": [
-                        {
-                            "id": str(server.get("id", "")),
-                            "name": str(server.get("name", "") or server.get("id", "")),
-                        }
-                        for server in vpn_state.get("servers", [])
-                        if isinstance(server, dict) and server.get("id")
-                    ],
-                    "tunEnabled": bool(vpn_state.get("tun_enabled", settings.goshkow_vpn_tun_enabled)),
-                    "routingMode": str(vpn_state.get("routing_mode", settings.goshkow_vpn_routing_mode)),
-                    "systemProxyMode": str(vpn_state.get("system_proxy_mode", settings.goshkow_vpn_system_proxy_mode)),
-                    "processes": str(vpn_state.get("processes", settings.goshkow_vpn_processes)),
-                    "processesExcludeMode": bool(vpn_state.get("processes_exclude_mode", settings.goshkow_vpn_processes_exclude_mode)),
-                },
-                "tg": {
-                    "host": settings.tg_proxy_host, "port": settings.tg_proxy_port, "secret": settings.tg_proxy_secret,
-                    "dcIp": settings.tg_proxy_dc_ip, "cfProxyEnabled": bool(settings.tg_proxy_cfproxy_enabled),
-                    "cfProxyPriority": bool(settings.tg_proxy_cfproxy_priority), "cfProxyDomain": settings.tg_proxy_cfproxy_domain,
-                    "fakeTlsDomain": settings.tg_proxy_fake_tls_domain, "bufferKb": settings.tg_proxy_buf_kb,
-                    "poolSize": settings.tg_proxy_pool_size,
-                },
                 "dns": {"profile": str(getattr(settings, "dns_profile", "xbox") or "xbox")},
                 "theme": settings.theme,
             },
@@ -4119,7 +3524,6 @@ class WebBridge(QObject):
             "ui": {
                 "locale": settings.language if settings.language in {"ru", "en"} else "ru",
                 "theme": settings.theme,
-                "hasValidVpnKey": str(vpn_state.get("subscription_state", "")) == "valid" or bool(settings.goshkow_vpn_subscription_url.strip()),
             },
         }
 
@@ -4421,59 +3825,9 @@ class WebMainWindow(QMainWindow):
         slug = str(parsed.get("slug") or "")
         if not slug:
             return
-        # Site "Add to Zapret Hub" may use install or project/open URLs — both should
-        # open the marketplace detail and start a native download.
-        should_install = action in {"", "install", "add", "download", "open", "project"}
-        payload = {
-            "action": "install" if should_install else action,
-            "slug": slug,
-            "versionId": str(parsed.get("version_id") or ""),
-        }
-        bridge = self.bridge
-        if bridge is not None:
-            try:
-                bridge.event.emit("marketplace.navigate", json.dumps(payload, ensure_ascii=False))
-            except Exception:
-                pass
-        if should_install and self.context is not None:
-            market = self.context.marketplace
-            version_raw = str(parsed.get("version_id") or "").strip()
-            vid = int(version_raw) if version_raw.isdigit() else None
-
-            def _deeplink_install() -> None:
-                try:
-                    meta: dict[str, Any] = {}
-                    try:
-                        detail = market.get_project(slug)
-                        project = detail.get("project") if isinstance(detail.get("project"), dict) else {}
-                        meta = {
-                            "title": str(project.get("title") or ""),
-                            "compatibility": str(project.get("compatibility") or ""),
-                            "author": str(project.get("author") or ""),
-                            "summary": str(project.get("summary") or ""),
-                            "icon_url": str(project.get("iconUrl") or ""),
-                            "project_url": str(project.get("projectUrl") or ""),
-                        }
-                    except Exception:
-                        pass
-                    market.enqueue_download(slug, version_id=vid, **meta)
-                    if bridge is not None:
-                        title = meta.get("title") or slug
-                        self._schedule_on_gui(
-                            lambda: bridge._emit_toast(
-                                f"Загрузка «{title}»…" if bridge._ru() else f"Downloading “{title}”…",
-                                kind="info",
-                                toast_id=f"mp-deep-{slug}",
-                            )
-                        )
-                except Exception as error:
-                    if bridge is not None:
-                        msg = str(error)
-                        self._schedule_on_gui(
-                            lambda: bridge._emit_toast(msg, kind="error", toast_id=f"mp-deep-{slug}")
-                        )
-
-            threading.Thread(target=_deeplink_install, daemon=True, name="zapret-hub-deeplink-install").start()
+        # Marketplace deep links were removed together with the component; the
+        # generic install alias is no longer actionable.
+        return
 
     def queue_deeplink(self, raw: str) -> None:
         if getattr(self, "_ui_ready", False):
@@ -4509,7 +3863,7 @@ class WebMainWindow(QMainWindow):
                 "• Исправления стабильности переключения страниц\n"
                 "• Обновления компонентов обхода"
             ),
-            "htmlUrl": "https://github.com/goshkow/Zapret-Hub/releases",
+            "htmlUrl": "https://github.com/klondike0x/zapret-hub-continuation/releases",
             "demo": True,
         }
         QTimer.singleShot(700, lambda: self.bridge.event.emit("app.update-available", json.dumps(payload, ensure_ascii=False)))
@@ -4593,7 +3947,7 @@ class WebMainWindow(QMainWindow):
             from zapret_hub.services.backend_worker import _sync_bypass_enabled_for_mode
 
             runtime_id = str(self.context.settings.get().selected_runtime_mode or "zapret")
-            if runtime_id in {"zapret", "zapret2", "none", "goshkow-vpn"}:
+            if runtime_id in {"zapret", "zapret2", "none"}:
                 _sync_bypass_enabled_for_mode(self.context, runtime_id)
         except Exception:
             pass
@@ -4884,7 +4238,6 @@ class WebMainWindow(QMainWindow):
 
         mode_order = tuple(str(item) for item in (settings.runtime_mode_order or []))
         generals: list[dict[str, str]] = []
-        vpn_state: dict[str, Any] = {}
         if runtime_id == "zapret":
             generals = list(self.bridge._get_generals_payload() or [])
             selected = str(settings.selected_zapret_general or "")
@@ -4892,20 +4245,6 @@ class WebMainWindow(QMainWindow):
                 "zapret",
                 selected,
                 tuple((str(item.get("id", "")), str(item.get("name", ""))) for item in generals),
-            )
-        elif runtime_id == "goshkow-vpn":
-            vpn_state = self.context.vpn.state()
-            servers = [
-                (str(server.get("id", "")), str(server.get("name", "") or server.get("id", "")))
-                for server in (vpn_state.get("servers") or [])
-                if isinstance(server, dict) and server.get("id")
-            ]
-            detail_sig = (
-                "vpn",
-                str(vpn_state.get("subscription_state", "") or ""),
-                str(vpn_state.get("subscription_url", "") or ""),
-                str(vpn_state.get("selected_server_id", "") or "auto"),
-                tuple(servers),
             )
         else:
             detail_sig = (runtime_id,)
@@ -4916,15 +4255,11 @@ class WebMainWindow(QMainWindow):
         self._tray_menu_sig = sig
         if runtime_id == "zapret":
             self._rebuild_tray_runtime_menu(
-                runtime_id, runtime_on, language, generals=generals, vpn_state=None
-            )
-        elif runtime_id == "goshkow-vpn":
-            self._rebuild_tray_runtime_menu(
-                runtime_id, runtime_on, language, generals=None, vpn_state=vpn_state
+                runtime_id, runtime_on, language, generals=generals
             )
         else:
             self._rebuild_tray_runtime_menu(
-                runtime_id, runtime_on, language, generals=None, vpn_state=None
+                runtime_id, runtime_on, language, generals=None
             )
 
     def _rebuild_tray_runtime_menu(
@@ -4934,12 +4269,10 @@ class WebMainWindow(QMainWindow):
         language: str,
         *,
         generals: list[dict[str, str]] | None = None,
-        vpn_state: dict[str, Any] | None = None,
     ) -> None:
         del runtime_on  # power is read live in _tray_select_runtime
         names = {
             "zapret": "Zapret",
-            "goshkow-vpn": "goshkow VPN",
             "zapret2": "Zapret 2",
             "none": "Без основного компонента" if language == "ru" else "No primary component",
         }
@@ -4982,64 +4315,9 @@ class WebMainWindow(QMainWindow):
                 detail_group.addAction(action)
                 self._tray_runtime_detail_menu.addAction(action)
             self._tray_runtime_detail_group = detail_group
-        elif runtime_id == "goshkow-vpn":
-            detail_action.setVisible(True)
-            self._tray_runtime_detail_menu.setEnabled(True)
-            self._tray_runtime_detail_menu.setTitle("Локация VPN" if language == "ru" else "VPN location")
-            if vpn_state is None:
-                vpn_state = self.context.vpn.state()
-            vpn_configured = (
-                str(vpn_state.get("subscription_state", "") or "") == "valid"
-                or bool(str(vpn_state.get("subscription_url", "") or "").strip())
-            )
-            if not vpn_configured or not list(vpn_state.get("servers", []) or []):
-                self._tray_runtime_detail_menu.setTitle(
-                    "Подключить VPN" if language == "ru" else "Connect VPN"
-                )
-                connect_action = QAction(
-                    "Открыть настройку VPN" if language == "ru" else "Open VPN setup",
-                    self._tray_runtime_detail_menu,
-                )
-                connect_action.triggered.connect(self._open_vpn_onboarding)
-                self._tray_runtime_detail_menu.addAction(connect_action)
-                return
-            selected = str(vpn_state.get("selected_server_id", "") or "auto")
-            detail_group = QActionGroup(self._tray_runtime_detail_menu)
-            detail_group.setExclusive(True)
-            locations = [{"id": "auto", "name": "Автоматически" if language == "ru" else "Automatic"}]
-            locations.extend(vpn_state.get("servers", []))
-            for server in locations:
-                server_id = str(server.get("id", ""))
-                action = QAction(str(server.get("name", server_id)), self._tray_runtime_detail_menu)
-                action.setCheckable(True)
-                action.setChecked(server_id == selected)
-                action.triggered.connect(lambda _checked=False, value=server_id: self._tray_select_vpn_server(value))
-                detail_group.addAction(action)
-                self._tray_runtime_detail_menu.addAction(action)
-            self._tray_runtime_detail_group = detail_group
         else:
             # zapret2 / none — no useful submenu items; hide the empty stub.
             detail_action.setVisible(False)
-
-    def _open_vpn_onboarding(self) -> None:
-        # Prefer Settings → VPN (subscription form), not the full services onboarding.
-        self.restore_from_external_launch()
-        try:
-            self.bridge.event.emit(
-                "vpn.setup-required",
-                json.dumps({"reason": "unconfigured"}, ensure_ascii=False),
-            )
-        except Exception:
-            pass
-        try:
-            self.bridge._emit_toast(
-                "Сначала настройте VPN-подписку." if self.bridge._ru() else "Configure the VPN subscription first.",
-                kind="warn",
-                toast_id="vpn-setup-required",
-            )
-        except Exception:
-            pass
-        self.bridge.emit_state(force=True)
 
     def _tray_select_runtime(self, runtime_id: str, was_powered: bool | None = None) -> None:
         # Same path as bridge runtime.select (gen-token + process switch).
@@ -5064,10 +4342,6 @@ class WebMainWindow(QMainWindow):
                 self.bridge.emit_state(force=True)
 
         threading.Thread(target=_apply, daemon=True, name="zapret-hub-tray-general").start()
-
-    def _tray_select_vpn_server(self, server_id: str) -> None:
-        # Same restart path as bridge vpn.select-server.
-        self.bridge._dispatch("vpn.select-server", {"id": server_id})
 
     def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         # Left / double-click restore the window. Right-click is owned by setContextMenu.

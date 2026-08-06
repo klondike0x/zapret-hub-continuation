@@ -25,11 +25,10 @@ from zapret_hub.services.storage import StorageManager
 
 
 class UpdatesManager:
-    REPO_URL = "https://github.com/goshkow/Zapret-Hub"
-    MIRROR_BASE_URL = "https://goshkow.com"
-    MIRROR_UPDATE_URL = MIRROR_BASE_URL + "/zapret-hub/update"
-    MIRROR_INFO_URL = MIRROR_BASE_URL + "/zapret-hub/info"
-    GITHUB_RELEASES_API_URL = "https://api.github.com/repos/goshkow/Zapret-Hub/releases?per_page=10"
+    REPO_URL = "https://github.com/klondike0x/zapret-hub-continuation"
+    MIRROR_UPDATE_URL = "https://api.github.com/repos/klondike0x/zapret-hub-continuation/releases?per_page=10"
+    MIRROR_INFO_URL = MIRROR_UPDATE_URL
+    GITHUB_RELEASES_API_URL = MIRROR_UPDATE_URL
     _EXE_NAMES = ("zapret_hub.exe", "Zapret_Hub.exe")
     # Hard ceilings so UI never sticks on "Скачиваем обновление…" forever.
     META_DEADLINE_SEC = 10.0
@@ -219,7 +218,7 @@ class UpdatesManager:
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise TimeoutError("goshkow.com не отвечает (таймаут)")
+                raise TimeoutError("Источник обновлений не отвечает (таймаут)")
             if done.wait(timeout=min(0.25, remaining)):
                 break
         if errors:
@@ -400,20 +399,20 @@ class UpdatesManager:
 
     def _friendly_mirror_error(self, error: BaseException) -> str:
         if self._is_certificate_error(error):
-            return "Не удалось проверить сертификат зеркала обновлений."
+            return "Не удалось проверить сертификат источника обновлений."
         if isinstance(error, TimeoutError):
             text = str(error).strip()
-            return text or "goshkow.com не отвечает (таймаут)."
+            return text or "Источник обновлений не отвечает (таймаут)."
         if isinstance(error, urllib.error.HTTPError):
             code = int(getattr(error, "code", 0) or 0)
             if code == 404:
-                return "Обновление не найдено на зеркале goshkow.com (HTTP 404)."
+                return "Обновление не найдено в источнике (HTTP 404)."
             if 500 <= code <= 599:
-                return f"Зеркало обновлений временно недоступно (HTTP {code})."
-            return f"Ошибка зеркала обновлений (HTTP {code})."
+                return f"Источник обновлений временно недоступен (HTTP {code})."
+            return f"Ошибка источника обновлений (HTTP {code})."
         if isinstance(error, (urllib.error.URLError, OSError)):
-            return "Не удалось подключиться к зеркалу обновлений goshkow.com. Проверьте сеть."
-        return f"Не удалось связаться с зеркалом обновлений: {error}"
+            return "Не удалось подключиться к источнику обновлений. Проверьте сеть."
+        return f"Не удалось связаться с источником обновлений: {error}"
 
     def _release_cache_path(self) -> Path:
         return self.storage.paths.cache_dir / "app_releases_cache.json"

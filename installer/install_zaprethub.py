@@ -348,7 +348,7 @@ def detect_payload_name() -> str:
     return "win_x64.zip"
 
 
-UPDATE_URL = "https://goshkow.com/zapret-hub/update"
+UPDATE_URL = "https://api.github.com/repos/klondike0x/zapret-hub-continuation/releases?per_page=10"
 METADATA_TIMEOUT_SEC = 10.0
 DOWNLOAD_CONNECT_TIMEOUT_SEC = 12.0
 DOWNLOAD_STALL_TIMEOUT_SEC = 45.0
@@ -396,7 +396,7 @@ def _run_with_deadline(func, *, timeout: float, cancel_event: threading.Event | 
         _check_cancel(cancel_event)
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise TimeoutError(tr("goshkow.com не отвечает (таймаут)", "goshkow.com is not responding (timeout)"))
+            raise TimeoutError(tr("Источник обновлений не отвечает (таймаут)", "Update source is not responding (timeout)"))
         if done.wait(timeout=min(0.25, remaining)):
             break
     if errors:
@@ -404,7 +404,7 @@ def _run_with_deadline(func, *, timeout: float, cancel_event: threading.Event | 
     return box.get("value")
 
 
-def _friendly_network_error(error: BaseException, *, context: str = "goshkow.com") -> str:
+def _friendly_network_error(error: BaseException, *, context: str = "github.com") -> str:
     if isinstance(error, InstallAbort):
         return str(error)
     if isinstance(error, HTTPError):
@@ -488,9 +488,54 @@ def _ensure_host_resolvable(url: str, *, timeout: float, cancel_event: threading
 def _fetch_mirror_release(*, timeout: float = METADATA_TIMEOUT_SEC, cancel_event: threading.Event | None = None) -> dict[str, object]:
     try:
         _ensure_host_resolvable(UPDATE_URL, timeout=min(timeout, 8.0), cancel_event=cancel_event)
-        return _urlopen_json(UPDATE_URL, timeout=timeout, cancel_event=cancel_event)
+        payload = _urlopen_json(UPDATE_URL, timeout=timeout, cancel_event=cancel_event)
+        return _normalize_github_release(payload)
     except Exception as error:
-        raise RuntimeError(_friendly_network_error(error, context="goshkow.com")) from error
+        raise RuntimeError(_friendly_network_error(error, context="github.com")) from error
+
+
+def _normalize_github_release(payload: object) -> dict[str, object]:
+    """Convert a GitHub releases API payload into the legacy mirror shape."""
+    if isinstance(payload, dict) and payload.get("version"):
+        return payload
+    releases = payload if isinstance(payload, list) else []
+    for item in releases:
+        if not isinstance(item, dict):
+            continue
+        if bool(item.get("draft")) or bool(item.get("prerelease")):
+            continue
+        version = str(item.get("tag_name") or item.get("name") or "").strip().lstrip("vV")
+        if not version:
+            continue
+        assets: dict[str, object] = {}
+        for raw_asset in (item.get("assets") or []):
+            if not isinstance(raw_asset, dict):
+                continue
+            name = str(raw_asset.get("name") or "")
+            url = str(raw_asset.get("browser_download_url") or "")
+            if not url:
+                continue
+            if "_x64." in name or name.endswith("_win_x64.zip"):
+                assets["x64"] = {
+                    "name": name,
+                    "download_url": url,
+                    "size": int(raw_asset.get("size") or 0),
+                }
+            elif "_arm64." in name or name.endswith("_win_arm64.zip"):
+                assets["arm64"] = {
+                    "name": name,
+                    "download_url": url,
+                    "size": int(raw_asset.get("size") or 0),
+                }
+        return {
+            "version": version,
+            "tag": str(item.get("tag_name") or ""),
+            "changelog": str(item.get("body") or ""),
+            "github_url": str(item.get("html_url") or ""),
+            "published_at": str(item.get("published_at") or ""),
+            "assets": assets,
+        }
+    raise ValueError(tr("Не найден доступный релиз.", "No available release found."))
 
 
 def _remote_release_version(release: dict[str, object] | None = None, *, timeout: float = REMOTE_VERSION_TIMEOUT_SEC) -> str:
@@ -531,7 +576,7 @@ def _download_payload_from_mirror(
             return
 
     _installer_log("download_begin", update_url=UPDATE_URL)
-    report(2, tr("Запрос метаданных goshkow.com…", "Requesting goshkow.com metadata…"))
+    report(2, tr("Запрос метаданных обновления…", "Requesting update metadata…"))
     temp_root = Path(tempfile.mkdtemp(prefix="zapret_hub_installer_download_"))
     try:
         _installer_log("download_dns_metadata")
@@ -543,7 +588,7 @@ def _download_payload_from_mirror(
         asset = dict((release.get("assets") or {}).get(asset_key) or {})
         download_url = str(asset.get("download_url") or "").strip()
         if not download_url:
-            download_url = f"https://goshkow.com/zapret-hub/{asset_key}"
+            download_url = ""
         archive_path = temp_root / detect_payload_name()
         digest = hashlib.sha256()
         downloaded = 0
@@ -563,14 +608,14 @@ def _download_payload_from_mirror(
             )
         except Exception as error:
             _installer_log("download_connect_failed", error=str(error))
-            raise RuntimeError(_friendly_network_error(error, context="goshkow.com")) from error
+            raise RuntimeError(_friendly_network_error(error, context="github.com")) from error
         download_started = time.monotonic()
         last_chunk_at = download_started
         first_byte_logged = False
         with response, archive_path.open("wb") as stream:
             status = int(getattr(response, "status", 0) or response.getcode() or 0)
             if status and status >= 400:
-                raise RuntimeError(_friendly_network_error(HTTPError(download_url, status, f"HTTP {status}", hdrs=None, fp=None), context="goshkow.com"))  # type: ignore[arg-type]
+                raise RuntimeError(_friendly_network_error(HTTPError(download_url, status, f"HTTP {status}", hdrs=None, fp=None), context="github.com"))  # type: ignore[arg-type]
             total = expected_size or int(response.headers.get("Content-Length") or 0)
             report(6, tr("Скачивание сборки…", "Downloading build…"))
             while True:
@@ -582,7 +627,7 @@ def _download_payload_from_mirror(
                 try:
                     chunk = response.read(256 * 1024)
                 except Exception as error:
-                    raise RuntimeError(_friendly_network_error(error, context="goshkow.com")) from error
+                    raise RuntimeError(_friendly_network_error(error, context="github.com")) from error
                 if not chunk:
                     break
                 if not first_byte_logged:
@@ -651,7 +696,7 @@ def set_windows_app_id() -> None:
     if not sys.platform.startswith("win"):
         return
     try:
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("goshkow.ZapretHub.NuitkaInstaller.1.4.2.pngsync2")  # type: ignore[attr-defined]
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("ZapretHub.Continuation.Installer")  # type: ignore[attr-defined]
     except Exception:
         return
 
@@ -1045,7 +1090,7 @@ class InstallerWorker(QThread):
             payload_zip: Path | None = None
             remote_version = ""
             release_identity: dict[str, str] = {}
-            self._emit(1, tr("Запуск загрузки с goshkow.com…", "Starting download from goshkow.com…"))
+            self._emit(1, tr("Запуск загрузки…", "Starting download…"))
             try:
                 payload_zip, downloaded_payload_root, remote_version, release_identity = _download_payload_from_mirror(
                     self._emit,
@@ -1056,7 +1101,7 @@ class InstallerWorker(QThread):
             except InstallAbort:
                 raise
             except Exception as download_error:
-                friendly = _friendly_network_error(download_error, context="goshkow.com")
+                friendly = _friendly_network_error(download_error, context="github.com")
                 _installer_log("payload_download_failed", error=friendly, local_payload=str(local_payload))
                 if local_payload.exists():
                     payload_zip = local_payload
@@ -1136,9 +1181,9 @@ class InstallerWorker(QThread):
             self._cleanup_temps()
             self.done.emit(False, str(error))
         except Exception as error:
-            friendly = _friendly_network_error(error, context="goshkow.com") if not str(error) else str(error)
-            if "goshkow" in str(error).lower() or isinstance(error, (URLError, HTTPError, TimeoutError, socket.timeout)):
-                friendly = _friendly_network_error(error, context="goshkow.com")
+            friendly = _friendly_network_error(error, context="github.com") if not str(error) else str(error)
+            if isinstance(error, (URLError, HTTPError, TimeoutError, socket.timeout)):
+                friendly = _friendly_network_error(error, context="github.com")
             _installer_log("install_failed", error=friendly)
             self._cleanup_temps()
             self.done.emit(False, friendly)
@@ -1401,7 +1446,7 @@ class WebInstallerBridge(QObject):
         if self.worker is not None and self.worker.isRunning():
             self.abort_all()
             self._aborting = False
-        status = tr("Запуск загрузки с goshkow.com…", "Starting download from goshkow.com…")
+        status = tr("Запуск загрузки…", "Starting download…")
         now = time.monotonic()
         self._install_started_at = now
         self._last_progress_at = now
@@ -1466,8 +1511,8 @@ class WebInstallerBridge(QObject):
         idle_for = time.monotonic() - self._install_started_at
         if idle_for >= CONNECT_WATCHDOG_SEC:
             message = tr(
-                "Не удалось подключиться к goshkow.com за 15 секунд. Проверьте сеть и попробуйте снова.",
-                "Could not connect to goshkow.com within 15 seconds. Check the network and try again.",
+                "Не удалось подключиться к источнику за 15 секунд. Проверьте сеть и попробуйте снова.",
+                "Could not connect to the source within 15 seconds. Check the network and try again.",
             )
             _installer_log(
                 "install_watchdog_timeout",

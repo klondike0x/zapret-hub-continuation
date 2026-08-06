@@ -69,15 +69,6 @@ foreach ($pattern in $excludeFilePatterns) {
 }
 
 # runtime-конфиг vpn каждый раз собирается заново при запуске
-$vpnGeneratedConfig = Join-Path $runtimeStage "v2rayN\goshkow-vpn"
-if (Test-Path $vpnGeneratedConfig) {
-    Remove-Item $vpnGeneratedConfig -Recurse -Force
-}
-$vpnSubscriptionHint = Join-Path $runtimeStage "v2rayN\goshkow-vpn-subscription.txt"
-if (Test-Path $vpnSubscriptionHint) {
-    Remove-Item $vpnSubscriptionHint -Force
-}
-
 # Drop Linux/Android/FreeBSD ELF + compile junk from Windows packages (keeps WinDivert).
 & $PythonExe scripts\prune_windows_runtime.py $runtimeStage
 if ($LASTEXITCODE -ne 0) { throw "prune_windows_runtime.py failed with exit code $LASTEXITCODE" }

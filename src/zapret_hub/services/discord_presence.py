@@ -2,7 +2,7 @@
 
 Requires Discord desktop running. Application ID defaults to the Hub app;
 override with settings or ``ZAPRET_HUB_DISCORD_CLIENT_ID``. Optional art keys:
-``logo``, ``zapret``, ``zapret2``, ``vpn``, ``idle``.
+``logo``, ``zapret``, ``zapret2``, ``idle``.
 """
 from __future__ import annotations
 
@@ -309,11 +309,6 @@ def build_activity(
         state = f"{mode_bit} · {uptime}"
         small = "zapret2"
         small_text = "Zapret 2"
-    elif mode == "goshkow-vpn":
-        mode_bit = "VPN · туннель" if ru else "VPN · tunnel"
-        state = f"{mode_bit} · {uptime}"
-        small = "vpn"
-        small_text = "VPN"
     else:
         pretty = general.replace(".bat", "").strip() or "general"
         if control == "auto":

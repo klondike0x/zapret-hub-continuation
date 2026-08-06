@@ -4,7 +4,7 @@ import { useLocale } from "@/hooks/useLocale";
 import { Segmented } from "@/components/ui/Segmented";
 import type { LogSource } from "@/bridge/types";
 
-const SOURCES: (LogSource | "all")[] = ["all", "app", "zapret", "zapret2", "vpn", "tg"];
+const SOURCES: (LogSource | "all")[] = ["all", "app", "zapret", "zapret2"];
 
 /** Poll only while this page is the active nav — pages stay mounted after prewarm. */
 export function LogsPage({ active = false }: { active?: boolean }) {
@@ -16,7 +16,7 @@ export function LogsPage({ active = false }: { active?: boolean }) {
   const listRef = useRef<HTMLDivElement>(null);
   const followTail = useRef(true);
 
-  // Process stdout (tg_ws_proxy.log etc.) only appears on rebuild — poll while Logs is open.
+  // Process stdout only appears on rebuild — poll while Logs is open.
   useEffect(() => {
     if (!active) return;
     refreshLogs();

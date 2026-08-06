@@ -46,8 +46,6 @@ function deepMergeSettings(base: Settings, patch?: SettingsPatch): Settings {
   const next: Settings = { ...base, ...patch };
   if (patch.zapret) next.zapret = { ...base.zapret, ...patch.zapret };
   if (patch.zapret2) next.zapret2 = { ...base.zapret2, ...patch.zapret2 };
-  if (patch.vpn) next.vpn = { ...base.vpn, ...patch.vpn };
-  if (patch.tg) next.tg = { ...base.tg, ...patch.tg };
   if (patch.dns) next.dns = { ...base.dns, ...patch.dns };
   // locale / modeOrder live outside Settings in AppState
   delete (next as Settings & { locale?: Locale }).locale;
@@ -62,12 +60,6 @@ function mergeSettingsPatch(current: SettingsPatch | undefined, patch: SettingsP
   }
   if (patch.zapret2 || current?.zapret2) {
     next.zapret2 = { ...(current?.zapret2 as object), ...(patch.zapret2 as object) } as Settings["zapret2"];
-  }
-  if (patch.vpn || current?.vpn) {
-    next.vpn = { ...(current?.vpn as object), ...(patch.vpn as object) } as Settings["vpn"];
-  }
-  if (patch.tg || current?.tg) {
-    next.tg = { ...(current?.tg as object), ...(patch.tg as object) } as Settings["tg"];
   }
   if (patch.dns || current?.dns) {
     next.dns = { ...(current?.dns as object), ...(patch.dns as object) } as Settings["dns"];
@@ -181,7 +173,7 @@ function pruneOptimistic(base: AppState, opt: Optimistic): Optimistic {
         }
         continue;
       }
-      if (key === "zapret" || key === "zapret2" || key === "vpn" || key === "tg" || key === "dns") {
+      if (key === "zapret" || key === "zapret2" || key === "dns") {
         const baseNest = base.settings[key] as Record<string, unknown>;
         const patchNest = value as Record<string, unknown>;
         const nestKept: Record<string, unknown> = {};
@@ -359,42 +351,7 @@ export function patchOptimistic(patch: Optimistic) {
   notify();
 }
 
-type Mods = NonNullable<AppState["mods"]>;
-type MarketplaceModsOverride = { mods: Mods; mods2: Mods };
-
-let marketplaceModsOverride: MarketplaceModsOverride | null = null;
-
-function marketplaceOnly(mods: Mods) {
-  return mods.filter((mod) => Boolean(String(mod.marketplaceSlug || "").trim()));
-}
-
-function marketplaceSignature(mods: Mods) {
-  // Order-sensitive: reordering must keep the optimistic override until the
-  // backend state matches the new sequence (not just the same set of mods).
-  return marketplaceOnly(mods)
-    .map((mod) => `${mod.id}:${mod.marketplaceSlug}:${mod.version || ""}`)
-    .join("|");
-}
-
-function mergeMarketplaceMods(current: Mods, authoritative: Mods) {
-  return [...current.filter((mod) => !String(mod.marketplaceSlug || "").trim()), ...marketplaceOnly(authoritative)];
-}
-
 function setBaseState(next: AppState, urgent = false) {
-  if (marketplaceModsOverride) {
-    const caughtUp =
-      marketplaceSignature(next.mods || []) === marketplaceSignature(marketplaceModsOverride.mods)
-      && marketplaceSignature(next.mods2 || []) === marketplaceSignature(marketplaceModsOverride.mods2);
-    if (caughtUp) {
-      marketplaceModsOverride = null;
-    } else {
-      next = {
-        ...next,
-        mods: mergeMarketplaceMods(next.mods || [], marketplaceModsOverride.mods),
-        mods2: mergeMarketplaceMods(next.mods2 || [], marketplaceModsOverride.mods2),
-      };
-    }
-  }
   baseState = next;
   optimistic = pruneOptimistic(next, optimistic);
   notify();
@@ -426,10 +383,6 @@ function ensureBridgeStore() {
   };
 
   bridge.subscribe("state.changed", (payload) => apply(payload));
-  bridge.subscribe("marketplace.mods-changed", (payload) => {
-    if (!baseState || !payload) return;
-    setBaseState({ ...baseState, mods: payload.mods || [], mods2: payload.mods2 || [] }, true);
-  });
   bridge.subscribe("runtime.status", (payload) => {
     if (!payload?.status || !baseState) return;
     // Power status must never be dropped during onboarding/nav quiet windows —
@@ -514,37 +467,6 @@ export async function refreshAppState(): Promise<AppState | null> {
   const next = await getBridge().call("state.get", undefined);
   if (next) setBaseState(next, true);
   return next;
-}
-
-export function applyMarketplaceMods(mods: AppState["mods"], mods2: AppState["mods2"]) {
-  const nextMods = mods || [];
-  const nextMods2 = mods2 || [];
-  const override = { mods: marketplaceOnly(nextMods), mods2: marketplaceOnly(nextMods2) };
-  marketplaceModsOverride = override;
-  if (!baseState) {
-    return;
-  }
-  setBaseState({
-    ...baseState,
-    mods: mergeMarketplaceMods(baseState.mods || [], nextMods),
-    mods2: mergeMarketplaceMods(baseState.mods2 || [], nextMods2),
-  }, true);
-  marketplaceModsOverride = override;
-}
-
-export async function refreshMarketplaceMods(slug = "", timeoutMs = 60_000): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const next = await getBridge().call("marketplace.installed", undefined);
-    const mods = next?.mods || [];
-    const mods2 = next?.mods2 || [];
-    if (!slug || [...mods, ...mods2].some((mod) => mod.marketplaceSlug === slug)) {
-      applyMarketplaceMods(mods, mods2);
-      return true;
-    }
-    await new Promise<void>((resolve) => window.setTimeout(resolve, 300));
-  }
-  return false;
 }
 
 export function useBridge() {

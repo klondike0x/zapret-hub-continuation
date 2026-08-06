@@ -15,7 +15,6 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from zapret_hub.runtime_env import development_install_root, is_packaged_runtime, packaged_install_root, packaged_resource_root
-from zapret_hub.workers import run_tg_ws_proxy_worker
 
 class _BootstrapThread(QThread):
     ready = Signal(object)
@@ -65,7 +64,7 @@ def _set_windows_app_id() -> None:
     if not sys.platform.startswith("win"):
         return
     try:
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("goshkow.ZapretHub")  # type: ignore[attr-defined]
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("ZapretHub.Continuation")  # type: ignore[attr-defined]
     except Exception:
         return
 
@@ -213,39 +212,12 @@ def run(argv: list[str] | None = None) -> int:
     _startup_trace("run: freeze_support passed")
     runtime_argv = list(argv if argv is not None else sys.argv[1:])
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--worker", choices=["tg-ws-proxy"], default="")
     parser.add_argument("--autostart-launch", action="store_true")
     parser.add_argument("--force-onboarding", action="store_true")
-    parser.add_argument("--tg-host", default="127.0.0.1")
-    parser.add_argument("--tg-port", type=int, default=1443)
-    parser.add_argument("--tg-secret", default="")
-    parser.add_argument("--tg-verbose", action="store_true")
-    parser.add_argument("--tg-dc-ip", action="append", default=[])
-    parser.add_argument("--tg-cfproxy-enabled", default="true")
-    parser.add_argument("--tg-cfproxy-priority", default="true")
-    parser.add_argument("--tg-cfproxy-domain", default="")
-    parser.add_argument("--tg-fake-tls-domain", default="")
-    parser.add_argument("--tg-buf-kb", type=int, default=256)
-    parser.add_argument("--tg-pool-size", type=int, default=4)
     parser.add_argument("--parent-pid", type=int, default=0)
     parser.add_argument("--hub-token", default="")
     known, _ = parser.parse_known_args(runtime_argv)
 
-    if known.worker == "tg-ws-proxy":
-        _startup_trace("run: worker=tg-ws-proxy")
-        return run_tg_ws_proxy_worker(
-            host=known.tg_host,
-            port=known.tg_port,
-            secret=known.tg_secret,
-            verbose=known.tg_verbose,
-            dc_ip=list(known.tg_dc_ip or []),
-            cfproxy_enabled=str(known.tg_cfproxy_enabled).lower() not in {"0", "false", "no", "off"},
-            cfproxy_priority=str(known.tg_cfproxy_priority).lower() not in {"0", "false", "no", "off"},
-            cfproxy_domain=known.tg_cfproxy_domain,
-            fake_tls_domain=known.tg_fake_tls_domain,
-            buf_kb=known.tg_buf_kb,
-            pool_size=known.tg_pool_size,
-        )
     if not known.autostart_launch:
         _startup_trace("run: ensure_admin start")
         elevate_result = _ensure_admin_windows(runtime_argv)

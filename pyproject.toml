@@ -5,13 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "zapret-hub"
 version = "3.0.2"
-description = "Windows desktop hub for managing external network utilities and configuration packs."
+description = "Windows desktop hub for DPI bypass management based on bol-van/zapret2."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "PySide6>=6.7",
     "certifi>=2024.0.0",
-    "cryptography>=46.0.0",
     "pydivert>=3.1.1",
 ]
 

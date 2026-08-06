@@ -36,17 +36,6 @@ class AppSettings:
     enabled_zapret2_mod_ids: list[str] = field(default_factory=list)
     mods_index_url: str = ""
     app_update_url: str = ""
-    tg_proxy_host: str = "127.0.0.1"
-    tg_proxy_port: int = 1443
-    tg_proxy_secret: str = ""
-    tg_proxy_dc_ip: str = "4:149.154.167.220"
-    tg_proxy_cfproxy_enabled: bool = True
-    tg_proxy_cfproxy_priority: bool = True
-    tg_proxy_cfproxy_domain: str = ""
-    tg_proxy_fake_tls_domain: str = ""
-    tg_proxy_buf_kb: int = 256
-    tg_proxy_pool_size: int = 4
-    tg_proxy_link_prompt_signature: str = ""
     selected_zapret_general: str = ""
     favorite_zapret_generals: list[str] = field(default_factory=list)
     general_autotest_done: bool = False
@@ -56,7 +45,7 @@ class AppSettings:
     selected_service_ids: list[str] = field(default_factory=list)
     selected_runtime_mode: str = "zapret"
     runtime_mode_order: list[str] = field(
-        default_factory=lambda: ["zapret", "goshkow-vpn", "zapret2", "none"]
+        default_factory=lambda: ["zapret", "zapret2", "none"]
     )
     no_bypass_power_enabled: bool = False
     zapret_ipset_mode: str = "loaded"
@@ -70,25 +59,10 @@ class AppSettings:
     zapret2_strategy_id: str = "balanced"
     # Deprecated compatibility field; the switch is no longer exposed or applied.
     zapret2_youtube_discord_bypass: bool = True
-    goshkow_vpn_pending_start: bool = False
-    zapret_was_running_before_goshkow_vpn: bool = False
-    zapret_was_enabled_before_goshkow_vpn: bool = False
-    xbox_dns_was_enabled_before_goshkow_vpn: bool = False
-    zapret2_was_running_before_goshkow_vpn: bool = False
-    zapret2_was_enabled_before_goshkow_vpn: bool = False
     zapret_was_running_before_zapret2: bool = False
     zapret_was_enabled_before_zapret2: bool = False
-    goshkow_vpn_was_running_before_zapret2: bool = False
-    goshkow_vpn_was_enabled_before_zapret2: bool = False
     xbox_dns_was_enabled_before_zapret2: bool = False
     dns_profile: str = "xbox"
-    goshkow_vpn_subscription_url: str = ""
-    goshkow_vpn_tun_enabled: bool = True
-    goshkow_vpn_routing_mode: str = "global"
-    goshkow_vpn_rules_mode: str = "blacklist"
-    goshkow_vpn_system_proxy_mode: str = "set"
-    goshkow_vpn_processes: str = ""
-    goshkow_vpn_processes_exclude_mode: bool = False
     apply_update_on_next_launch: bool = False
     # Discord Rich Presence (Application ID from Discord Developer Portal).
     discord_rpc_enabled: bool = True
@@ -152,7 +126,6 @@ class InstalledMod:
     general_scripts: list[str] = field(default_factory=list)
     emoji: str = ""
     icon_url: str = ""
-    marketplace_slug: str = ""
     installed_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 
 

@@ -268,7 +268,8 @@ def test_web_bridge_batches_mod_runtime_apply() -> None:
     assert "def _queue_mod_runtime_apply(" in source
     assert "time.sleep(0.2)" in source
     assert "manager.set_enabled_states(valid)" in source
-    assert 'self._queue_mod_runtime_refresh("zapret2" if compatibility == "zapret2" else "zapret")' in source
+    assert 'self._queue_mod_runtime_refresh("zapret2")' in source
+    assert 'self._queue_mod_runtime_refresh("zapret")' in source
     assert 'getattr(settings, "zapret2_control_mode"' in Path(
         __file__
     ).parents[1].joinpath("src/zapret_hub/services/components.py").read_text(encoding="utf-8")

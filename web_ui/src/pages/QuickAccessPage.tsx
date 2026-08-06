@@ -1,6 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useRef, useState } from "react";
 import { PowerButton } from "@/components/ui/PowerButton";
 import { StatusPill } from "@/components/ui/Chevron";
 import { useAppState, useBridge, patchOptimistic } from "@/hooks/useBridgeState";
@@ -11,7 +10,6 @@ import type { RuntimeId, RuntimeStatus } from "@/bridge/types";
 
 const modeColor: Record<RuntimeId, string> = {
   zapret: "#28c77b",
-  "goshkow-vpn": "#a24df3",
   zapret2: "#3d9fea",
   none: "#858b96",
 };
@@ -22,7 +20,7 @@ function statusTone(status: RuntimeStatus) {
   return status === "on" ? "ok" : status === "starting" || status === "stopping" ? "warn" : status === "error" ? "err" : "muted" as const;
 }
 
-function StatusIcon({ kind, status }: { kind: "app" | "mode" | "tg" | "mods" | "theme"; status?: string }) {
+function StatusIcon({ kind, status }: { kind: "app" | "mode" | "mods" | "theme"; status?: string }) {
   if (kind === "theme") return <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-sky-500/15 text-sky-400"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" className="block"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 1 1-9-9Z" /></svg></span>;
   if (kind === "mods") return <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-violet-400"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" className="block"><path d="m12 2 8.7 5v10L12 22l-8.7-5V7z" /></svg></span>;
   const color = status === "on" ? "var(--ok)" : status === "error" ? "var(--err)" : status === "starting" || status === "stopping" ? "var(--warn)" : "var(--fg-mute)";
@@ -34,30 +32,23 @@ function StatusIcon({ kind, status }: { kind: "app" | "mode" | "tg" | "mods" | "
   return <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full" style={{ background: color }}><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="block" aria-hidden="true">{symbol}</svg></span>;
 }
 
-export function QuickAccessPage({ onOpenComponent, onConnectVpn }: {
-  onOpenComponent?: (id: "zapret" | "zapret2" | "goshkow-vpn" | "tg-ws-proxy") => void;
-  onConnectVpn?: () => void;
+export function QuickAccessPage({ onOpenComponent }: {
+  onOpenComponent?: (id: "zapret" | "zapret2") => void;
 }) {
   const state = useAppState();
   const bridge = useBridge();
   const { t, locale } = useLocale();
   const modeNames: Record<RuntimeId, string> = {
     zapret: "Zapret",
-    "goshkow-vpn": "goshkow VPN",
     zapret2: "Zapret 2",
     none: locale === "ru" ? "Без основного компонента" : "No primary component",
   };
   const [previewMode, setPreviewMode] = useState<RuntimeId | null>(null);
   const [pendingPower, setPendingPower] = useState<"starting" | "stopping" | null>(null);
-  const [locationOpen, setLocationOpen] = useState(false);
-  const [locationMenuStyle, setLocationMenuStyle] = useState<React.CSSProperties>({});
   const switchTimer = useRef<number | null>(null);
   const pendingModeRef = useRef<RuntimeId | null>(null);
   /** Keep power on across browse→commit so intermediate/failed selects don't leave the button off. */
   const keepPowerRef = useRef(false);
-  const locationRef = useRef<HTMLDivElement>(null);
-  const locationButtonRef = useRef<HTMLButtonElement>(null);
-  const locationMenuRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const wheelLock = useRef(0);
   const previewModeRef = useRef<RuntimeId | null>(null);
@@ -106,11 +97,6 @@ export function QuickAccessPage({ onOpenComponent, onConnectVpn }: {
       const keepPower = keepPowerRef.current
         || latest.runtime.status === "on"
         || latest.runtime.status === "starting";
-      if (target === "goshkow-vpn" && !latest.ui.hasValidVpnKey && keepPower) {
-        setPreviewMode(null);
-        onConnectVpn?.();
-        return;
-      }
       patchOptimistic({
         runtime: {
           active: target,
@@ -140,38 +126,6 @@ export function QuickAccessPage({ onOpenComponent, onConnectVpn }: {
   useEffect(() => () => {
     clearModeTimer();
   }, []);
-  useEffect(() => {
-    const close = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (locationRef.current?.contains(target) || locationMenuRef.current?.contains(target)) return;
-      setLocationOpen(false);
-    };
-    document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
-  }, []);
-  useLayoutEffect(() => {
-    if (!locationOpen || !locationButtonRef.current) return;
-    const update = () => {
-      const rect = locationButtonRef.current!.getBoundingClientRect();
-      const menuWidth = 220;
-      const estimatedHeight = Math.min(280, 12 + (1 + (state?.settings.vpn.servers.length ?? 0)) * 36);
-      const spaceBelow = window.innerHeight - rect.bottom - 8;
-      const openUp = spaceBelow < estimatedHeight && rect.top > spaceBelow;
-      const left = Math.min(Math.max(8, rect.left + rect.width / 2 - menuWidth / 2), window.innerWidth - menuWidth - 8);
-      setLocationMenuStyle({
-        position: "fixed",
-        left,
-        width: menuWidth,
-        top: openUp ? undefined : rect.bottom + 6,
-        bottom: openUp ? window.innerHeight - rect.top + 6 : undefined,
-        maxHeight: Math.min(280, openUp ? rect.top - 12 : window.innerHeight - rect.bottom - 12),
-        zIndex: 1200,
-      });
-    };
-    update();
-    window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
-  }, [locationOpen, state?.settings.vpn.servers.length]);
   useEffect(() => {
     if (pendingPower === "starting" && (state?.runtime.status === "on" || state?.runtime.status === "error")) {
       setPendingPower(null);
@@ -237,12 +191,7 @@ export function QuickAccessPage({ onOpenComponent, onConnectVpn }: {
     ? "starting"
     : pendingPower ?? state.runtime.status;
   const on = status === "on";
-  const tgStatus = state.components["tg-ws-proxy"].status;
   const enabledMods = state.mods.filter((mod) => mod.enabled).length;
-  const selectedVpnLocation = state.settings.vpn.selectedServerId === "auto"
-    ? (locale === "ru" ? "Автоматически" : "Automatic")
-    : state.settings.vpn.servers.find((server) => server.id === state.settings.vpn.selectedServerId)?.name
-      ?? (locale === "ru" ? "Автоматически" : "Automatic");
   // Same settle for click and wheel — apply only after 1.5s without further input.
   const selectMode = (id: RuntimeId) => {
     notePowerIntent(state);
@@ -252,10 +201,6 @@ export function QuickAccessPage({ onOpenComponent, onConnectVpn }: {
     // Allow cancel during "starting" (incl. Auto tuning restarts). Only block while already stopping.
     if (status === "stopping") return;
     const nextOn = status === "off" || status === "error";
-    if (nextOn && active === "goshkow-vpn" && !state.ui.hasValidVpnKey) {
-      onConnectVpn?.();
-      return;
-    }
     keepPowerRef.current = nextOn;
     setPendingPower(nextOn ? "starting" : "stopping");
     patchOptimistic({ runtime: { status: nextOn ? "starting" : "stopping" } });
@@ -273,7 +218,6 @@ export function QuickAccessPage({ onOpenComponent, onConnectVpn }: {
   const cards = [
     { label: t("status.app"), value: runtimeLabel(status), kind: "app" as const, status },
     { label: modeNames[active], value: runtimeLabel(status), kind: "mode" as const, status },
-    { label: t("status.tgproxy"), value: tgStatus === "on" ? t("power.on") : tgStatus === "starting" ? t("power.starting") : tgStatus === "stopping" ? (locale === "ru" ? "Отключение…" : "Disconnecting…") : tgStatus === "error" ? t("power.error") : t("power.off"), kind: "tg" as const, status: tgStatus },
     { label: t("status.mods"), value: `${enabledMods} ${locale === "ru" ? "активно" : "active"}`, kind: "mods" as const },
     { label: t("status.theme"), value: themeName[state.settings.theme] ?? state.settings.theme, kind: "theme" as const },
   ];
@@ -325,48 +269,7 @@ export function QuickAccessPage({ onOpenComponent, onConnectVpn }: {
             </motion.div>
           </AnimatePresence>
           <div className="mt-2">
-            {active === "goshkow-vpn" && state.ui.hasValidVpnKey && state.settings.vpn.servers.length > 0 ? (
-              <div ref={locationRef} className="relative inline-flex text-left">
-                <button
-                  ref={locationButtonRef}
-                  type="button"
-                  aria-label={locale === "ru" ? "Локация VPN" : "VPN location"}
-                  aria-expanded={locationOpen}
-                  onClick={() => setLocationOpen((open) => !open)}
-                  className="inline-flex min-w-[190px] items-center justify-between gap-4 rounded-full border border-line-2 bg-bg-1 px-3.5 py-1.5 text-[11px] font-medium text-fg shadow-sm transition-all hover:border-accent/50 hover:bg-bg-2"
-                >
-                  <span className="truncate">{selectedVpnLocation}</span>
-                  <svg className={`shrink-0 text-fg-dim transition-transform duration-200 ${locationOpen ? "rotate-180" : ""}`} width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m3 4.5 3 3 3-3" /></svg>
-                </button>
-                {typeof document !== "undefined" && createPortal(
-                  <AnimatePresence>
-                    {locationOpen && (
-                      <motion.div
-                        ref={locationMenuRef}
-                        initial={{ opacity: 0, y: -4, scale: 0.98 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: -3, scale: 0.98 }}
-                        transition={{ duration: 0.14 }}
-                        style={locationMenuStyle}
-                        className="overflow-y-auto rounded-[13px] border border-line-2 bg-bg-2 p-1.5 shadow-[0_14px_36px_rgba(0,0,0,.34)]"
-                      >
-                        {[{ id: "auto", name: locale === "ru" ? "Автоматически" : "Automatic" }, ...state.settings.vpn.servers].map((server) => {
-                          const selected = server.id === state.settings.vpn.selectedServerId;
-                          return <button key={server.id} type="button" onClick={() => {
-                            patchOptimistic({ settings: { vpn: { ...state.settings.vpn, selectedServerId: server.id } } });
-                            void bridge.call("vpn.select-server", { id: server.id });
-                            setLocationOpen(false);
-                          }} className={`flex w-full items-center justify-between rounded-[9px] px-3 py-2 text-[11px] transition-colors ${selected ? "bg-accent/15 text-fg" : "text-fg-dim hover:bg-bg-3 hover:text-fg"}`}><span className="truncate">{server.name}</span>{selected && <span className="h-1.5 w-1.5 rounded-full bg-accent" />}</button>;
-                        })}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>,
-                  document.body,
-                )}
-              </div>
-            ) : active === "goshkow-vpn" && !state.ui.hasValidVpnKey ? (
-              <button onClick={onConnectVpn} className="rounded-full border border-line-1 bg-bg-1 px-3 py-1 text-[11px] font-medium text-fg transition-all hover:bg-bg-2">{locale === "ru" ? "Подключить VPN" : "Connect VPN"}</button>
-            ) : (active === "zapret" || active === "zapret2") && (state.orchestrator?.isAuto || state.orchestrator?.mode === "auto" || state.settings.zapret.controlMode === "auto") ? (
+            {(active === "zapret" || active === "zapret2") && (state.orchestrator?.isAuto || state.orchestrator?.mode === "auto" || state.settings.zapret.controlMode === "auto") ? (
               <StatusPill
                 label={
                   ["tuning", "picking", "bootstrap"].includes(String(state.orchestrator?.status || ""))
@@ -384,7 +287,7 @@ export function QuickAccessPage({ onOpenComponent, onConnectVpn }: {
 
       <div className="grid w-full shrink-0 grid-cols-5 gap-2.5">
         {cards.map((card) => {
-          const componentId = card.kind === "mode" && active !== "none" ? active : card.kind === "tg" ? "tg-ws-proxy" : null;
+          const componentId = card.kind === "mode" && active !== "none" ? active : null;
           return (
           <button key={card.kind} disabled={!componentId} onClick={() => componentId && onOpenComponent?.(componentId)} className="quick-status-card soft-card min-w-0 rounded-[15px] border border-line-1 px-3.5 py-3.5 text-left disabled:cursor-default">
             <AnimatePresence mode="wait" initial={false}>

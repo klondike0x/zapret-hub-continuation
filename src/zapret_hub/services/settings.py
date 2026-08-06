@@ -46,10 +46,6 @@ class SettingsManager:
                         autostart_defaults.append(cid)
                 settings.enabled_component_ids = enabled_defaults
                 settings.autostart_component_ids = autostart_defaults
-            # New clients: TG WS Proxy on; stock services selected (CF/Discord/YT/Gaming/Clouds).
-            enabled = {str(item) for item in (settings.enabled_component_ids or [])}
-            if "tg-ws-proxy" not in enabled:
-                settings.enabled_component_ids = sorted([*enabled, "tg-ws-proxy"])
             if not settings.selected_service_ids:
                 from zapret_hub.services.service_rules import merge_auto_default_services
 
@@ -116,7 +112,7 @@ class SettingsManager:
             settings.zapret_gaming_set = "stun-wide-base"
             changed = True
 
-        if raw.get("selected_runtime_mode") not in {"zapret", "zapret2", "goshkow-vpn", "none"}:
+        if raw.get("selected_runtime_mode") not in {"zapret", "zapret2", "none"}:
             settings.selected_runtime_mode = "zapret"
             changed = True
 
@@ -141,7 +137,7 @@ class SettingsManager:
             settings.dns_profile = "xbox"
             changed = True
 
-        runtime_modes = ("zapret", "goshkow-vpn", "zapret2", "none")
+        runtime_modes = ("zapret", "zapret2", "none")
         raw_runtime_order = raw.get("runtime_mode_order", settings.runtime_mode_order)
         if not isinstance(raw_runtime_order, list):
             raw_runtime_order = []
@@ -151,18 +147,6 @@ class SettingsManager:
         normalized_runtime_order.extend(mode for mode in runtime_modes if mode not in normalized_runtime_order)
         if normalized_runtime_order != list(settings.runtime_mode_order):
             settings.runtime_mode_order = normalized_runtime_order
-            changed = True
-
-        if raw.get("goshkow_vpn_routing_mode") not in {"global", "blacklist", "whitelist"}:
-            settings.goshkow_vpn_routing_mode = "global"
-            changed = True
-
-        if raw.get("goshkow_vpn_rules_mode") not in {"blacklist", "whitelist"}:
-            settings.goshkow_vpn_rules_mode = "blacklist"
-            changed = True
-
-        if raw.get("goshkow_vpn_system_proxy_mode") not in {"clear", "set", "unchanged", "pac"}:
-            settings.goshkow_vpn_system_proxy_mode = "set"
             changed = True
 
         if raw.get("sounds_volume") not in {"normal", "louder", "quieter"}:

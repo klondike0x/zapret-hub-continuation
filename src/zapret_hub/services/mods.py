@@ -99,7 +99,7 @@ class ModsManager:
                 continue
             requested.append(by_id[mod_id])
             seen.add(mod_id)
-        # Keep relative slots of untouched mods (custom vs marketplace pages
+        # Keep relative slots of untouched mods (custom vs bundled pages
         # often send only their subset).
         ordered: list[InstalledMod] = []
         req_iter = iter(requested)
@@ -139,7 +139,6 @@ class ModsManager:
         author: str,
         version: str,
         icon_url: str | None = None,
-        marketplace_slug: str | None = None,
         source_url: str | None = None,
     ) -> InstalledMod:
         if mod_id == "unified-by-goshkow":
@@ -152,8 +151,6 @@ class ModsManager:
         entry.version = version.strip() or entry.version or datetime.utcnow().strftime("%Y.%m.%d")
         if icon_url is not None:
             entry.icon_url = str(icon_url or "").strip()
-        if marketplace_slug is not None:
-            entry.marketplace_slug = str(marketplace_slug or "").strip()
         if source_url is not None:
             entry.source_url = str(source_url or "").strip()
         self.storage.write_json(self._installed_path, [asdict(item) for item in installed])

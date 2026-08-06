@@ -1105,8 +1105,6 @@ class CutoverManager:
             elif step.value not in {"telegram-desktop", "ai"}:
                 enabled.add("zapret")
                 enabled.discard("zapret2")
-            if step.value == "telegram-desktop":
-                enabled.add("tg-ws-proxy")
             if step.value == "ai":
                 enabled.add("xbox-dns")
             if step.value in {"gaming", "warframe"} and live_backend == "zapret":

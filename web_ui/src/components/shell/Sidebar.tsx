@@ -1,18 +1,13 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { uiAssetUrl } from "@/lib/assets";
-import { useMarketplaceQueue } from "@/hooks/useMarketplaceQueue";
-import { DownloadQueueButton } from "@/components/shell/DownloadQueueButton";
-import { ConfirmModal } from "@/components/ui/ConfirmModal";
-import { useLocale } from "@/hooks/useLocale";
 import { useBridge } from "@/hooks/useBridgeState";
 
-export type NavKey = "quick" | "components" | "marketplace" | "installed" | "mods" | "files" | "logs" | "settings";
+export type NavKey = "quick" | "components" | "installed" | "mods" | "files" | "logs" | "settings";
 
 const icons: Record<NavKey, string> = {
   quick: "home.svg",
   components: "components.svg",
-  marketplace: "marketplace.svg",
   installed: "mods.svg",
   mods: "mods.svg",
   files: "files.svg",
@@ -26,25 +21,15 @@ const github = (
   </svg>
 );
 
-const globe = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10" />
-    <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
-  </svg>
-);
-
 const items: { key: NavKey; label: string }[] = [
   { key: "quick", label: "Quick access" },
   { key: "components", label: "Components" },
-  { key: "marketplace", label: "Marketplace" },
   { key: "installed", label: "Installed mods" },
   { key: "logs", label: "Logs" },
   { key: "settings", label: "Settings" },
 ];
 
 export function Sidebar({ current, onSelect, labels }: { current: NavKey; onSelect: (k: NavKey) => void; labels: Record<NavKey, string> }) {
-  const queue = useMarketplaceQueue();
-  const { locale } = useLocale();
   const bridge = useBridge();
   const [hovered, setHovered] = useState<NavKey | null>(null);
 
@@ -74,7 +59,7 @@ export function Sidebar({ current, onSelect, labels }: { current: NavKey; onSele
                   initial={false}
                   animate={{ scale: active ? 1.055 : hovered === it.key ? 1.04 : 1 }}
                   transition={{ type: "spring", stiffness: 420, damping: 30, mass: 0.7 }}
-                  className={`nav-icon relative block bg-current ${it.key === "quick" ? "h-[25px] w-[25px]" : it.key === "logs" ? "h-[23px] w-[20px]" : it.key === "settings" ? "h-[21px] w-[21px]" : it.key === "marketplace" ? "h-[26px] w-[26px]" : it.key === "installed" ? "h-[23px] w-[23px]" : "h-6 w-6"}`}
+                  className={`nav-icon relative block bg-current ${it.key === "quick" ? "h-[25px] w-[25px]" : it.key === "logs" ? "h-[23px] w-[20px]" : it.key === "settings" ? "h-[21px] w-[21px]" : it.key === "installed" ? "h-[23px] w-[23px]" : "h-6 w-6"}`}
                   style={{
                     WebkitMask: `url("${uiAssetUrl(`icons/${icons[it.key]}`)}") center / contain no-repeat`,
                     mask: `url("${uiAssetUrl(`icons/${icons[it.key]}`)}") center / contain no-repeat`,
@@ -87,39 +72,9 @@ export function Sidebar({ current, onSelect, labels }: { current: NavKey; onSele
         })}
       </ul>
       <div className="mt-auto flex flex-col items-center">
-      <DownloadQueueButton
-          visible={queue.visible}
-          progress={queue.progress}
-          completedFlash={queue.completedFlash}
-          items={queue.queue.items}
-          onCancel={(slug, jobId) => void queue.cancel(slug, jobId)}
-          onPause={(slug, jobId) => void queue.pause(slug, jobId)}
-          onResume={(slug, jobId) => void queue.resume(slug, jobId)}
-          onReorder={(orderedSlugs) => void queue.reorder(orderedSlugs)}
-      />
-      <ConfirmModal
-        open={queue.storageWarning}
-        title={locale === "ru" ? "Недостаточно места" : "Not enough disk space"}
-        message={locale === "ru"
-          ? "Для установки модификаций на диске должен оставаться как минимум 1 ГБ свободного места. Освободите место и повторите попытку."
-          : "At least 1 GB of free disk space must remain to install modifications. Free up some space and try again."}
-        confirmLabel={locale === "ru" ? "Понятно" : "OK"}
-        cancelLabel={locale === "ru" ? "Закрыть" : "Close"}
-        onConfirm={queue.clearStorageWarning}
-        onCancel={queue.clearStorageWarning}
-      />
         <button
           type="button"
-          onClick={() => void bridge.call("marketplace.open-url", { url: "https://goshkow.com/zapret-hub" })}
-          aria-label={locale === "ru" ? "Открыть сайт Zapret Hub" : "Open Zapret Hub website"}
-          title={locale === "ru" ? "Открыть сайт Zapret Hub" : "Open Zapret Hub website"}
-          className="sidebar-link grid h-11 w-11 place-items-center text-fg-dim opacity-55"
-        >
-          {globe}
-        </button>
-        <button
-          type="button"
-          onClick={() => void bridge.call("marketplace.open-url", { url: "https://github.com/goshkow/Zapret-Hub" })}
+          onClick={() => void bridge.call("ui.open-url", { url: "https://github.com/klondike0x/zapret-hub-continuation" })}
           aria-label="GitHub"
           title="GitHub"
           className="sidebar-link grid h-11 w-11 place-items-center text-fg-dim opacity-55"

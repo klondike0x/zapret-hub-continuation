@@ -164,7 +164,7 @@ export function AppUpdateModal({
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => void bridge.call("marketplace.open-url", { url: prompt.htmlUrl })}
+                  onClick={() => void bridge.call("ui.open-url", { url: prompt.htmlUrl })}
                   className="rounded-[9px] border border-line-1 bg-bg-2 px-3 py-1.5 text-[11px] text-fg hover:bg-bg-3"
                 >
                   {ru ? "Открыть ссылку" : "Open link"}

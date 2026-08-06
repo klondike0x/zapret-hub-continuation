@@ -1,33 +1,21 @@
 from zapret_hub.services.deeplink import parse_zaprethub_url
 
 
-def test_install_path():
-    assert parse_zaprethub_url("zaprethub://marketplace/install/youtube-flow") == {
-        "action": "install",
-        "slug": "youtube-flow",
-        "version_id": "",
-    }
-
-
-def test_install_query():
-    assert parse_zaprethub_url("zaprethub://marketplace/install?slug=yt&version_id=12") == {
-        "action": "install",
-        "slug": "yt",
-        "version_id": "12",
-    }
-
-
-def test_project_open():
-    assert parse_zaprethub_url("zaprethub://marketplace/project/discord-bridge") == {
-        "action": "open",
-        "slug": "discord-bridge",
-        "version_id": "",
-    }
-
-
-def test_short_alias():
+def test_install_alias():
     assert parse_zaprethub_url("zaprethub://install/foo") == {
         "action": "install",
         "slug": "foo",
         "version_id": "",
     }
+
+
+def test_marketplace_links_are_no_longer_actionable():
+    # Marketplace deep links were removed together with the component.
+    assert parse_zaprethub_url("zaprethub://marketplace/install/youtube-flow") is None
+    assert parse_zaprethub_url("zaprethub://marketplace/install?slug=yt&version_id=12") is None
+    assert parse_zaprethub_url("zaprethub://marketplace/project/discord-bridge") is None
+
+
+def test_unknown_scheme_is_ignored():
+    assert parse_zaprethub_url("https://example.com/install/foo") is None
+    assert parse_zaprethub_url("") is None

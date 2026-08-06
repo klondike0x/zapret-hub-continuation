@@ -1,7 +1,7 @@
 import { uiAssetUrl } from "@/lib/assets";
 import type { AppState, RuntimeId } from "@/bridge/types";
 
-export type SoundId = "click" | "switch" | "error" | "zapret" | "zapret2" | "vpn" | "off";
+export type SoundId = "click" | "switch" | "error" | "zapret" | "zapret2" | "off";
 export type SoundsVolume = "normal" | "louder" | "quieter";
 
 const files: Record<SoundId, string> = {
@@ -10,7 +10,6 @@ const files: Record<SoundId, string> = {
   error: "startup-error.mp3",
   zapret: "zapret-on.mp3",
   zapret2: "zapret2-on.mp3",
-  vpn: "vpn-on.mp3",
   off: "power-off.mp3",
 };
 
@@ -35,7 +34,6 @@ const SOUND_GAIN: Record<SoundId, number> = {
   error: 1,
   zapret: 1.7,
   zapret2: 1,
-  vpn: 1.05,
   off: 1.65,
 };
 
@@ -179,7 +177,6 @@ export function playSound(id: SoundId) {
 export function soundForRuntime(runtime: RuntimeId): SoundId | null {
   if (runtime === "zapret") return "zapret";
   if (runtime === "zapret2") return "zapret2";
-  if (runtime === "goshkow-vpn") return "vpn";
   return null;
 }
 

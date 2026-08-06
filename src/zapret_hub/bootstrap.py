@@ -3,7 +3,6 @@ from datetime import datetime
 from pathlib import Path
 import os
 import shutil
-import secrets
 import sys
 from typing import Any
 
@@ -14,12 +13,10 @@ from zapret_hub.services.autostart import AutostartManager
 from zapret_hub.services.components import ProcessManager
 from zapret_hub.services.diagnostics import DiagnosticsManager
 from zapret_hub.services.files import FilesManager
-from zapret_hub.services.goshkow_vpn import GoshkowVpnManager
 from zapret_hub.services.logging_service import LoggingManager
 from zapret_hub.services.merge import MergeEngine
 from zapret_hub.services.mods import ModsManager
 from zapret_hub.services.zapret2_mods import Zapret2ModsManager
-from zapret_hub.services.marketplace import MarketplaceService
 from zapret_hub.services.notifications import NotificationManager
 from zapret_hub.services.orchestrator import OrchestratorEngine, knowledge_dir
 from zapret_hub.services.orchestrator.knowledge import KnowledgeStore
@@ -38,14 +35,12 @@ class ApplicationContext:
     processes: ProcessManager
     mods: ModsManager
     mods2: Zapret2ModsManager
-    marketplace: MarketplaceService
     notifications: NotificationManager
     merge: MergeEngine
     diagnostics: DiagnosticsManager
     updates: UpdatesManager
     profiles: ProfilesManager
     files: FilesManager
-    vpn: GoshkowVpnManager
     orchestrator: OrchestratorEngine
     knowledge: KnowledgeStore
     backend: Any | None = None
@@ -103,17 +98,10 @@ def bootstrap_application() -> ApplicationContext:
     merge = MergeEngine(storage, logging, settings)
     mods = ModsManager(storage, logging, merge, settings, processes=processes)
     mods2 = Zapret2ModsManager(storage, logging, settings)
-    marketplace = MarketplaceService(
-        storage_paths=paths,
-        logging=logging,
-        mods=mods,
-        mods2=mods2,
-    )
     diagnostics = DiagnosticsManager(storage, logging, processes, mods, merge)
     updates = UpdatesManager(storage, logging, processes=processes, settings=settings)
     profiles = ProfilesManager(storage)
     files = FilesManager(storage, settings)
-    vpn = GoshkowVpnManager(storage, logging)
     knowledge = KnowledgeStore(knowledge_dir(paths.data_dir))
     orchestrator = OrchestratorEngine(
         language=lambda: str(settings.get().language or "ru"),
@@ -129,14 +117,12 @@ def bootstrap_application() -> ApplicationContext:
         processes=processes,
         mods=mods,
         mods2=mods2,
-        marketplace=marketplace,
         notifications=notifications,
         merge=merge,
         diagnostics=diagnostics,
         updates=updates,
         profiles=profiles,
         files=files,
-        vpn=vpn,
         orchestrator=orchestrator,
         knowledge=knowledge,
         backend=None,
@@ -181,15 +167,12 @@ def build_startup_snapshot(context: ApplicationContext) -> dict[str, Any]:
             "selected_runtime_mode": getattr(current, "selected_runtime_mode", "zapret"),
         },
         "general_options": general_options,
-        "goshkow_vpn": context.vpn.state(),
     }
 
 
 def _prime_first_run_state(settings: SettingsManager, processes: ProcessManager) -> None:
     current = settings.get()
     changes: dict[str, Any] = {}
-    if not (current.tg_proxy_secret or "").strip():
-        changes["tg_proxy_secret"] = secrets.token_hex(16)
     if str(current.zapret_ipset_mode or "").strip() not in {"loaded", "none", "any"}:
         changes["zapret_ipset_mode"] = "loaded"
     if str(current.zapret_game_filter_mode or "").strip() not in {"disabled", "tcp", "udp", "tcpudp"}:
@@ -273,14 +256,14 @@ def _ensure_windows_apps_registration(install_root: Path) -> None:
     values: dict[str, object] = {
         "DisplayName": "Zapret Hub",
         "DisplayVersion": str(__version__),
-        "Publisher": "goshkow",
+        "Publisher": "zapret-hub-continuation",
         "InstallLocation": str(install_root),
         "DisplayIcon": str(app_exe),
         "UninstallString": uninstall_cmd,
         "QuietUninstallString": f'{uninstall_cmd} --silent',
         "InstallDate": datetime.now().strftime("%Y%m%d"),
-        "URLInfoAbout": "https://goshkow.com/zapret-hub/",
-        "HelpLink": "https://goshkow.com/zapret-hub/",
+        "URLInfoAbout": "https://github.com/klondike0x/zapret-hub-continuation",
+        "HelpLink": "https://github.com/klondike0x/zapret-hub-continuation",
         "NoModify": 1,
         "NoRepair": 1,
         "VersionMajor": major,

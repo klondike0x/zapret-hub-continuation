@@ -22,8 +22,6 @@ _DROP_WINDOWS_X86 = True
 
 # Source / build trees never needed at Windows runtime.
 _DROP_RELATIVE_DIRS = (
-    # Repository metadata from the bundled tg-ws-proxy source is not runtime data.
-    Path("tg-ws-proxy") / ".github",
     Path("zapret2") / "nfq2",
     Path("zapret2") / "docs" / "compile",
     Path("zapret2") / "ip2net",
@@ -51,7 +49,7 @@ def _should_drop_binary_dir(name: str) -> bool:
 def prune_windows_runtime(runtime_root: Path, *, dry_run: bool = False) -> dict[str, int]:
     """Remove foreign binaries and build junk from ``runtime_root``.
 
-    ``runtime_root`` is the directory that contains ``zapret2``, ``v2rayN``, etc.
+    ``runtime_root`` is the directory that contains ``zapret2``, etc.
     Returns counters for logging/tests.
     """
     runtime_root = Path(runtime_root)

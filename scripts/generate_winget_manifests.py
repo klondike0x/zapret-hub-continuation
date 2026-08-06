@@ -71,25 +71,24 @@ ManifestVersion: {MANIFEST_VERSION}
 """,
         f"{PACKAGE_IDENTIFIER}.locale.en-US.yaml": f"""# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.{MANIFEST_VERSION}.schema.json
 {common}PackageLocale: en-US
-Publisher: goshkow
-PublisherUrl: https://goshkow.com/
-PublisherSupportUrl: https://github.com/goshkow/Zapret-Hub/issues
+Publisher: zapret-hub-continuation
+PublisherUrl: https://github.com/klondike0x/zapret-hub-continuation
+PublisherSupportUrl: https://github.com/klondike0x/zapret-hub-continuation/issues
 PackageName: Zapret Hub
-PackageUrl: https://github.com/goshkow/Zapret-Hub
-License: MIT
-LicenseUrl: https://github.com/goshkow/Zapret-Hub/blob/main/LICENSE
-ShortDescription: Windows application for managing censorship-circumvention components.
+PackageUrl: https://github.com/klondike0x/zapret-hub-continuation
+License: GPL-3.0
+LicenseUrl: https://github.com/klondike0x/zapret-hub-continuation/blob/main/LICENSE
+ShortDescription: Windows application for managing DPI circumvention components.
 Moniker: zapret-hub
 Tags:
 - dpi
-- vpn
 - windows
 ManifestType: defaultLocale
 ManifestVersion: {MANIFEST_VERSION}
 """,
         f"{PACKAGE_IDENTIFIER}.locale.ru-RU.yaml": f"""# yaml-language-server: $schema=https://aka.ms/winget-manifest.locale.{MANIFEST_VERSION}.schema.json
 {common}PackageLocale: ru-RU
-Publisher: goshkow
+Publisher: zapret-hub-continuation
 PackageName: Zapret Hub
 ShortDescription: Приложение для управления компонентами обхода блокировок в Windows.
 ManifestType: locale

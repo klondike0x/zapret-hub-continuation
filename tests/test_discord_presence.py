@@ -98,25 +98,3 @@ def test_build_activity_zapret2_auto() -> None:
     assert "Zapret 2" in activity["state"]
     assert "авто" in activity["state"]
     assert activity["assets"]["small_image"] == "zapret2"
-
-
-def test_build_activity_vpn() -> None:
-    flavor = STATUS_FLAVORS_EN[8]
-    activity = build_activity(
-        PresenceSnapshot(
-            enabled=True,
-            powered=True,
-            runtime_mode="goshkow-vpn",
-            control_mode="manual",
-            general_name="",
-            strategy_id="",
-            language="en",
-            version="3.0.1",
-        ),
-        started_at=2,
-        flavor=flavor,
-        now=2,
-    )
-    assert activity["details"] == flavor
-    assert "VPN" in activity["state"]
-    assert activity["assets"]["small_image"] == "vpn"

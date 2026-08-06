@@ -63,19 +63,18 @@ def test_current_theme_choice_is_preserved(tmp_path: Path, monkeypatch: pytest.M
     assert SettingsManager(storage).get().theme == "oled"
 
 
-def test_new_client_defaults_youtube_discord_and_tg_proxy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_new_client_defaults_youtube_and_discord(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     storage = _Storage(tmp_path)
     storage.write_json(
         tmp_path / "components.json",
         [
             {"id": "zapret", "enabled": True, "autostart": False},
-            {"id": "tg-ws-proxy", "enabled": True, "autostart": True},
         ],
     )
     monkeypatch.setattr(SettingsManager, "_detect_system_theme", lambda _self: "dark")
     monkeypatch.setattr(SettingsManager, "_detect_system_language", lambda _self: "ru")
 
     settings = SettingsManager(storage).get()
-    assert "tg-ws-proxy" in settings.enabled_component_ids
+    assert "zapret" in settings.enabled_component_ids
     assert "youtube" in settings.selected_service_ids
     assert "discord" in settings.selected_service_ids

@@ -6,7 +6,6 @@ import { Sidebar, type NavKey } from "@/components/shell/Sidebar";
 import { ToastProvider } from "@/components/shell/ToastHost";
 import { OrchestratorUx } from "@/components/shell/OrchestratorUx";
 import { AppUpdateModal, type AppUpdatePrompt } from "@/components/shell/AppUpdateModal";
-import { ModUpdatesModal, type ModUpdateItem } from "@/components/shell/ModUpdatesModal";
 import { ComponentUpdatesModal, type ComponentUpdateItem } from "@/components/shell/ComponentUpdatesModal";
 import { SettingsModal, type SettingsTab } from "@/components/settings/SettingsModal";
 import { OnboardingFlow } from "@/components/onboarding/OnboardingFlow";
@@ -14,7 +13,6 @@ import { QuickAccessPage } from "@/pages/QuickAccessPage";
 import { ComponentsPage } from "@/pages/ComponentsPage";
 import { ModsPage } from "@/pages/ModsPage";
 import { FilesPage } from "@/pages/FilesPage";
-import { MarketplacePage } from "@/pages/MarketplacePage";
 import { InstalledModsPage } from "@/pages/InstalledModsPage";
 import { LogsPage } from "@/pages/LogsPage";
 import { useAppState, useBridge, patchOptimistic, pauseStatePushes } from "@/hooks/useBridgeState";
@@ -27,8 +25,8 @@ import { serviceIconUrl } from "@/lib/serviceAssets";
 import { TextContextMenu } from "@/components/shell/TextContextMenu";
 import { SurfGameModal } from "@/components/onboarding/SurfGameModal";
 
-const NAV_KEYS: NavKey[] = ["quick", "components", "marketplace", "installed", "mods", "files", "logs", "settings"];
-const PRELOAD_ORDER: NavKey[] = ["components", "marketplace", "installed", "settings", "mods", "files", "logs"];
+const NAV_KEYS: NavKey[] = ["quick", "components", "installed", "mods", "files", "logs", "settings"];
+const PRELOAD_ORDER: NavKey[] = ["components", "installed", "settings", "mods", "files", "logs"];
 
 function preloadImage(src: string, timeoutMs = 1200) {
   return new Promise<void>((resolve) => {
@@ -95,7 +93,7 @@ function Shell() {
   const { t, locale } = useLocale();
   const [onboardingSkipped, setOnboardingSkipped] = useState(false);
   const [forcedOnboarding, setForcedOnboarding] = useState(false);
-  const [forcedOnboardingMode, setForcedOnboardingMode] = useState<"zapret" | "goshkow-vpn">("zapret");
+  const [forcedOnboardingMode, setForcedOnboardingMode] = useState<"zapret" | "zapret2" | "none">("zapret");
   const [onboardingExiting, setOnboardingExiting] = useState(false);
   const [onboardingFadeOut, setOnboardingFadeOut] = useState(false);
   const [focusedComponent, setFocusedComponent] = useState<string | null>(null);
@@ -105,11 +103,7 @@ function Shell() {
   const sidebarPersistTimer = useRef(0);
   const [updatePrompt, setUpdatePrompt] = useState<AppUpdatePrompt | null>(null);
   const [updateGameOpen, setUpdateGameOpen] = useState(false);
-  const [modUpdates, setModUpdates] = useState<ModUpdateItem[] | null>(null);
   const [componentUpdates, setComponentUpdates] = useState<ComponentUpdateItem[] | null>(null);
-  const [marketplaceSlug, setMarketplaceSlug] = useState<string | null>(null);
-  const [marketplaceInstall, setMarketplaceInstall] = useState(false);
-  const [marketplaceVersionId, setMarketplaceVersionId] = useState<string | null>(null);
   const [introActive, setIntroActive] = useState(false);
   const [uiPrewarmed, setUiPrewarmed] = useState(false);
   const bootRevealedRef = useRef(false);
@@ -117,7 +111,7 @@ function Shell() {
   const onboardingExitFallbackRef = useRef(0);
   const onboardingExitStartedAtRef = useRef(0);
   const pendingOnboardingCompleteRef = useRef<{
-    mode?: "zapret" | "zapret2" | "goshkow-vpn" | "none";
+    mode?: "zapret" | "zapret2" | "none";
     selected?: string[];
     dismiss?: boolean;
   } | null>(null);
@@ -165,7 +159,7 @@ function Shell() {
   };
 
   const beginOnboardingExit = (payload?: {
-    mode?: "zapret" | "zapret2" | "goshkow-vpn" | "none";
+    mode?: "zapret" | "zapret2" | "none";
     selected?: string[];
     dismiss?: boolean;
   }) => {
@@ -278,7 +272,6 @@ function Shell() {
         preloadImage(uiAssetUrl("icons/app.png")),
         preloadImage(uiAssetUrl("icons/component_zapret.svg")),
         preloadImage(uiAssetUrl("icons/component_zapret2.svg")),
-        preloadImage(uiAssetUrl("icons/vpn.svg")),
         ...state.services.available.map((service) => preloadImage(serviceIconUrl(service.id), 900)),
         soundWarm,
       ]);
@@ -356,50 +349,9 @@ function Shell() {
     return off;
   }, []);
 
-  useEffect(() => {
-    const off = getBridge().subscribe("marketplace.updates-available", (payload) => {
-      const list = Array.isArray(payload?.updates) ? payload.updates : [];
-      if (list.length) setModUpdates(list);
-    });
-    return off;
-  }, []);
-
-  useEffect(() => {
-    const off = getBridge().subscribe("vpn.setup-required", () => {
-      // A missing subscription is configured in the compact VPN onboarding.
-      // Do not navigate to Settings first: that produces a visible intermediate
-      // screen before the onboarding overlay is mounted.
-      setForcedOnboardingMode("goshkow-vpn");
-      setForcedOnboarding(true);
-    });
-    return off;
-  }, []);
-
-  useEffect(() => {
-    const off = getBridge().subscribe("marketplace.navigate", (payload) => {
-      const slug = String(payload?.slug || "").trim();
-      if (!slug) return;
-      const action = String(payload?.action || "").trim().toLowerCase();
-      const shouldInstall = !action || ["install", "add", "download", "open", "project"].includes(action);
-      setSettingsChild(null);
-      setMountedPages((prev) => {
-        if (prev.has("marketplace")) return prev;
-        const next = new Set(prev);
-        next.add("marketplace");
-        return next;
-      });
-      setMarketplaceInstall(shouldInstall);
-      setMarketplaceVersionId(String(payload?.versionId || "").trim() || null);
-      setMarketplaceSlug(slug);
-      setNav("marketplace");
-    });
-    return off;
-  }, []);
-
   const labels: Record<NavKey, string> = {
     quick: t("nav.quick"),
     components: t("nav.components"),
-    marketplace: t("nav.marketplace"),
     installed: t("nav.installed"),
     mods: t("nav.mods"),
     files: t("nav.files"),
@@ -411,19 +363,13 @@ function Shell() {
     const nodes: Partial<Record<NavKey, ReactNode>> = {};
     for (const key of mountedPages) {
       if (key === "quick") {
-        nodes.quick = <QuickAccessPage onOpenComponent={(id) => { setFocusedComponent(id); setNav("components"); }} onConnectVpn={() => {
-          setForcedOnboardingMode("goshkow-vpn");
-          setForcedOnboarding(true);
-        }} />;
+        nodes.quick = <QuickAccessPage onOpenComponent={(id) => { setFocusedComponent(id); setNav("components"); }} />;
       } else if (key === "components") {
         nodes.components = <ComponentsPage focusId={focusedComponent} onFocusHandled={() => setFocusedComponent(null)} onConfigure={(id) => {
-          setSettingsTab(id === "goshkow-vpn" ? "vpn" : id === "tg-ws-proxy" ? "tg" : id === "zapret2" ? "zapret2" : "zapret");
+          setSettingsTab(id === "zapret2" ? "zapret2" : "zapret");
           setNav("settings");
         }} onReconfigure={() => {
           setForcedOnboardingMode("zapret");
-          setForcedOnboarding(true);
-        }} onConnectVpn={() => {
-          setForcedOnboardingMode("goshkow-vpn");
           setForcedOnboarding(true);
         }} onOpenManual={(backend, target) => {
           setSettingsChild(backend === "zapret2" ? (target === "mods" ? "mods2" : "files2") : target);
@@ -451,22 +397,8 @@ function Shell() {
             setNav("settings");
           }}
         />;
-      } else if (key === "marketplace") {
-        nodes.marketplace = (
-          <MarketplacePage
-            active={nav === "marketplace"}
-            openSlug={marketplaceSlug}
-            autoInstall={marketplaceInstall}
-            openVersionId={marketplaceVersionId}
-            onSlugHandled={() => {
-              setMarketplaceSlug(null);
-              setMarketplaceInstall(false);
-              setMarketplaceVersionId(null);
-            }}
-          />
-        );
       } else if (key === "installed") {
-        nodes.installed = <InstalledModsPage onOpenMarketplace={() => setNav("marketplace")} />;
+        nodes.installed = <InstalledModsPage />;
       } else if (key === "logs") {
         nodes.logs = <LogsPage active={nav === "logs"} />;
       } else if (key === "settings") {
@@ -491,12 +423,11 @@ function Shell() {
       }
     }
     return nodes;
-  }, [mountedPages, focusedComponent, settingsChild, settingsTab, nav, marketplaceSlug, marketplaceInstall, marketplaceVersionId]);
+  }, [mountedPages, focusedComponent, settingsChild, settingsTab, nav]);
 
   const navAccent: Record<NavKey, string> = {
     quick: "#9b69e8",
     components: "#4ebe85",
-    marketplace: "#ec4899",
     installed: "#a78bfa",
     mods: "#9b69e8",
     files: "#e15860",
@@ -637,7 +568,6 @@ function Shell() {
         locale={locale === "en" ? "en" : "ru"}
         onClose={() => setUpdateGameOpen(false)}
       />
-      <ModUpdatesModal updates={modUpdates} onClose={() => setModUpdates(null)} />
       <ComponentUpdatesModal updates={componentUpdates} onClose={() => setComponentUpdates(null)} />
     </div>
   );

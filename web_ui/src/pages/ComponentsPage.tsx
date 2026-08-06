@@ -10,11 +10,11 @@ import { uiAssetUrl } from "@/lib/assets";
 import { ScrollGlassHeader } from "@/components/ui/ScrollGlassHeader";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 
-const ORDER: ComponentId[] = ["zapret", "zapret2", "goshkow-vpn", "tg-ws-proxy", "xbox-dns"];
-const GITHUB_VERSION_IDS: ComponentId[] = ["zapret", "zapret2", "tg-ws-proxy"];
+const ORDER: ComponentId[] = ["zapret", "zapret2", "xbox-dns"];
+const GITHUB_VERSION_IDS: ComponentId[] = ["zapret", "zapret2"];
 
 const componentIcon: Record<ComponentId, string> = {
-  zapret: "component_zapret.svg", zapret2: "component_zapret2.svg", "goshkow-vpn": "vpn.svg", "tg-ws-proxy": "component_tg.svg", "xbox-dns": "component_xbox_dns.svg",
+  zapret: "component_zapret.svg", zapret2: "component_zapret2.svg", "xbox-dns": "component_xbox_dns.svg",
 };
 
 const DNS_PROFILE_IDS: Array<Settings["dns"]["profile"]> = ["dhcp", "xbox", "cloudflare", "adguard", "google", "yandex"];
@@ -38,10 +38,9 @@ function statusLabel(status: ComponentStatus, t: (key: LocaleKey) => string): st
   return status;
 }
 
-export function ComponentsPage({ onConfigure, onReconfigure, onConnectVpn, onOpenManual, focusId, onFocusHandled }: {
+export function ComponentsPage({ onConfigure, onReconfigure, onOpenManual, focusId, onFocusHandled }: {
   onConfigure?: (id: ComponentId) => void;
   onReconfigure?: () => void;
-  onConnectVpn?: () => void;
   onOpenManual?: (backend: "zapret" | "zapret2", target: "mods" | "files") => void;
   focusId?: string | null;
   onFocusHandled?: () => void;
@@ -245,7 +244,7 @@ export function ComponentsPage({ onConfigure, onReconfigure, onConnectVpn, onOpe
               <div key={id} data-component-id={id} className="soft-card flex min-h-[152px] flex-col rounded-[16px] border border-line-1 p-4">
                 <div className="flex items-start justify-between gap-3">
                 <div className="grid h-11 w-11 place-items-center rounded-xl border border-line-1 bg-bg-1 p-2 text-fg-dim">
-                  <img className={`h-full w-full object-contain ${id === "goshkow-vpn" ? "component-icon-adaptive scale-[0.84]" : id === "zapret2" ? "scale-[1.16]" : ""}`} src={uiAssetUrl(`icons/${componentIcon[id]}`)} aria-hidden="true" />
+                  <img className={`h-full w-full object-contain ${id === "zapret2" ? "scale-[1.16]" : ""}`} src={uiAssetUrl(`icons/${componentIcon[id]}`)} aria-hidden="true" />
                 </div>
                 <div className="flex items-center gap-1">
                   <button onClick={() => onConfigure?.(id)} className="rounded-lg px-2 py-1 text-[11px] text-fg-dim transition-all duration-200 hover:bg-bg-3 hover:text-fg">{t("component.settings")}</button>
@@ -266,14 +265,11 @@ export function ComponentsPage({ onConfigure, onReconfigure, onConnectVpn, onOpe
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    {id !== "xbox-dns" && id !== "goshkow-vpn" && <button disabled={checkingId === id || updatingId === id} onClick={() => checkUpdate(id)} className="rounded-lg border border-line-1 bg-bg-1 px-2.5 py-1.5 text-[11px] text-fg-dim transition-all duration-200 hover:bg-bg-3 hover:text-fg disabled:opacity-50">{updatingId === id ? t("component.updating") : checkingId === id ? t("component.checking") : t("component.update")}</button>}
-                    {id === "goshkow-vpn" && <button onClick={onConnectVpn} className="rounded-lg border border-line-1 bg-bg-1 px-2.5 py-1.5 text-[11px] text-fg-dim transition-all duration-200 hover:bg-bg-3 hover:text-fg">{t("component.connect")}</button>}
-                    {id === "goshkow-vpn" && <button onClick={() => bridge.call("component.open-external", { id })} className="rounded-lg border border-line-1 bg-bg-1 px-2.5 py-1.5 text-[11px] text-fg-dim transition-all duration-200 hover:bg-bg-3 hover:text-fg">{t("component.trial")}</button>}
+                    {id !== "xbox-dns" && <button disabled={checkingId === id || updatingId === id} onClick={() => checkUpdate(id)} className="rounded-lg border border-line-1 bg-bg-1 px-2.5 py-1.5 text-[11px] text-fg-dim transition-all duration-200 hover:bg-bg-3 hover:text-fg disabled:opacity-50">{updatingId === id ? t("component.updating") : checkingId === id ? t("component.checking") : t("component.update")}</button>}
                     {id === "xbox-dns" && <button onClick={() => setDnsOpen((value) => !value)} className="rounded-lg border border-line-1 bg-bg-1 px-2.5 py-1.5 text-[11px] text-fg-dim transition-all duration-200 hover:bg-bg-3 hover:text-fg">{t("component.chooseDns")}</button>}
                     {id === "zapret" && controlMode("zapret") !== "auto" && <button onClick={onReconfigure} className="rounded-lg border border-line-1 bg-bg-1 px-2.5 py-1.5 text-[11px] text-fg-dim transition-all duration-200 hover:bg-bg-3 hover:text-fg">{locale === "ru" ? "Настроить сервисы" : "Configure services"}</button>}
-                    {id === "tg-ws-proxy" && <button onClick={() => bridge.call("tg.connect", undefined)} className="rounded-lg border border-line-1 bg-bg-1 px-2.5 py-1.5 text-[11px] text-fg-dim transition-all duration-200 hover:bg-bg-3 hover:text-fg">{t("component.connectTg")}</button>}
                   </div>
-                  {(id === "tg-ws-proxy" || id === "xbox-dns") && <IosToggle on={on} onChange={(v) => toggleComponent(id, v)} label={c.name} />}
+                  {id === "xbox-dns" && <IosToggle on={on} onChange={(v) => toggleComponent(id, v)} label={c.name} />}
                 </div>
                 {(id === "zapret" || id === "zapret2") && controlMode(id) === "manual" && (
                   <div className="mt-2.5 border-t border-line-1 pt-2.5">

@@ -21,7 +21,7 @@ param(
     [string]$Compiler = "msvc"
 )
 
-# Slim installer: downloads runtime from goshkow.com; does NOT embed installer_payload/*.zip.
+# Slim installer: downloads the app build from GitHub Releases; does NOT embed installer_payload/*.zip.
 # Prefer exit-code checks over treating Nuitka stderr progress as terminating errors.
 $ErrorActionPreference = "Continue"
 if (Test-Path variable:PSNativeCommandUseErrorActionPreference) {

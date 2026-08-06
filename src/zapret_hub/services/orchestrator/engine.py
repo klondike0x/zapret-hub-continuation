@@ -64,7 +64,6 @@ _STEP_PHASES: tuple[tuple[str, frozenset[str]], ...] = (
 )
 _PHASE_LABELS = {
     "services": ("сервисы", "services"),
-    "marketplace_mods": ("модификации Marketplace", "Marketplace modifications"),
     "user_mods": ("пользовательские модификации", "custom modifications"),
     "network": ("TCP/UDP", "TCP/UDP"),
     "lists": ("домены и IP", "domains and IPs"),
@@ -1368,7 +1367,6 @@ class OrchestratorEngine:
                     self._log("warning", "list_zapret_generals failed", error=str(error))
             installed_mods.sort(
                 key=lambda item: (
-                    0 if str(getattr(item, "marketplace_slug", "") or "").strip() else 1,
                     str(getattr(item, "name", "") or getattr(item, "id", "") or "").lower(),
                 )
             )
@@ -1593,16 +1591,14 @@ class OrchestratorEngine:
         cumulative: list[Any] = []
         plans: list[tuple[str, list[Any]]] = []
         consumed: set[int] = set()
-        for phase, marketplace in (("marketplace_mods", True), ("user_mods", False)):
+        for phase in ("user_mods",):
             additions = [
                 step
                 for index, step in enumerate(remaining)
-                if index not in consumed
-                and step.kind == "enable_mod"
-                and (("marketplace" in str(step.reason).lower()) == marketplace)
+                if index not in consumed and step.kind == "enable_mod"
             ]
             if additions:
-                # Services must always be tried before either modification layer.
+                # Services must always be tried before the modification layer.
                 if not plans:
                     service_steps = [step for step in remaining if step.kind == "enable_service"]
                     if service_steps:

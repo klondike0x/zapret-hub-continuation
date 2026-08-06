@@ -232,7 +232,6 @@ jobs:
           "version=$version" >> $env:GITHUB_OUTPUT
 
       # Identical to local slim: no -X64Source / -Arm64Source, no installer_payload zips.
-      # Runtime and architecture-matching uninstaller are downloaded from goshkow.com.
       # Builds one custom graphical installer without an external setup wrapper.
       - name: Build slim installer (local build_nuitka_installer.ps1)
         shell: pwsh
@@ -368,7 +367,7 @@ jobs:
             --version $version `
             --x64-archive "$releaseDir\zapret_hub_${version}_portable_win_x64.zip" `
             --output-dir "$releaseDir\winget" `
-            --release-base-url "https://github.com/goshkow/Zapret-Hub/releases/download/$tag" `
+            --release-base-url "https://github.com/klondike0x/zapret-hub-continuation/releases/download/$tag" `
             --bundle "$releaseDir\winget-manifests-${version}.zip"
 
       - name: Read release notes
@@ -387,7 +386,7 @@ jobs:
           } else {
             $body = @(
               "## Assets",
-              "- ``install_zaprethub_${version}_universal.exe`` - slim installer (downloads app from goshkow.com)",
+              "- ``install_zaprethub_${version}_universal.exe`` - slim installer",
               "- ``zapret_hub_${version}_portable_win_x64.zip`` - portable build for Windows x64",
               "- ``winget-manifests-${version}.zip`` - WinGet manifests"
             ) -join "`n"
