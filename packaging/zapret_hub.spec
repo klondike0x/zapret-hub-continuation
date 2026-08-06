@@ -52,6 +52,7 @@ datas = [
     (str(project_root / "docs" / "legal" / "ZAPRET_HUB_TERMS_RU.txt"), "docs/legal"),
 ]
 certifi_datas = collect_data_files("certifi")
+crypto_hiddenimports = collect_submodules("cryptography")
 
 a = Analysis(
     [str(project_root / "src" / "zapret_hub" / "main.py")],
@@ -92,7 +93,7 @@ a = Analysis(
         "typing",
         "urllib",
         "urllib.request",
-    ],
+    ] + crypto_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

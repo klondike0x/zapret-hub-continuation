@@ -56,6 +56,15 @@ const components: Record<ComponentId, import("./types").ComponentInfo> = {
     description: "Системные DNS-серверы с выбором провайдера",
     config: "Servers: 1.1.1.1, 9.9.9.9",
   },
+  "tg-ws-proxy": {
+    id: "tg-ws-proxy",
+    name: "TG WS Proxy",
+    version: "0.4.0",
+    status: "off",
+    enabled: false,
+    description: "WebSocket proxy для Telegram",
+    config: "Host: 127.0.0.1:1443",
+  },
 };
 
 const initialFiles: FileEntry[] = [
@@ -93,7 +102,7 @@ const initialMods: Mod[] = [
 
 const initialLogs: LogEntry[] = Array.from({ length: 20 }, (_, i) => ({
   id: `l${i}`,
-  source: (["app", "zapret", "zapret2", "app", "zapret"] as const)[i % 5],
+  source: (["app", "zapret", "tg", "zapret2", "app", "zapret"] as const)[i % 6],
   level: (["info", "info", "warn", "info", "error"] as const)[i % 5],
   message: [
     "Application started",
@@ -156,6 +165,7 @@ const initialState: AppState = {
       ],
     },
     zapret2: { controlMode: "manual", tcpPorts: "80,443", udpPorts: "443", rawFilter: "", luaStrategy: "", strategyId: "balanced", youtubeDiscordBypass: true },
+    tg: { host: "127.0.0.1", port: 1443, secret: "", dcIp: "4:149.154.167.220", cfProxyEnabled: true, cfProxyPriority: true, cfProxyDomain: "", fakeTlsDomain: "", bufferKb: 256, poolSize: 4 },
     dns: { profile: "xbox" },
     theme: "night",
   },
@@ -191,7 +201,7 @@ export function createMockBridge(): ZapretHubBridge {
       if (state.runtime.status !== "on") return;
       const entry: LogEntry = {
         id: `l${Date.now()}`,
-        source: (["app", "zapret", "zapret2"] as const)[Math.floor(Math.random() * 3)],
+        source: (["app", "zapret", "tg", "zapret2"] as const)[Math.floor(Math.random() * 4)],
         level: Math.random() > 0.85 ? "warn" : "info",
         message: [
           "heartbeat ok",
@@ -287,8 +297,12 @@ export function createMockBridge(): ZapretHubBridge {
             { version: "1.0.1", publishedAt: "2026-06-10T12:00:00Z", recommended: false, current: state.components.zapret2.version === "1.0.1" },
             { version: "1.0", publishedAt: "2026-06-01T12:00:00Z", recommended: false, current: false },
           ]
+          : p.id === "tg-ws-proxy" ? [
+            { version: "1.8.1", publishedAt: "2026-07-01T12:00:00Z", recommended: true, current: state.components["tg-ws-proxy"].version === "1.8.1" },
+            { version: "1.8.0", publishedAt: "2026-06-20T12:00:00Z", recommended: false, current: state.components["tg-ws-proxy"].version === "1.8.0" },
+          ]
           : undefined;
-        const latestVersion = versions?.[0]?.version || (p.id === "zapret2" ? "master" : "latest");
+        const latestVersion = versions?.[0]?.version || (p.id === "zapret2" ? "master" : p.id === "tg-ws-proxy" ? "1.8.1" : "latest");
         setTimeout(() => emit("component.update-check", {
           requestId: p.requestId,
           id: p.id,
@@ -307,7 +321,7 @@ export function createMockBridge(): ZapretHubBridge {
         pushState();
         setTimeout(() => {
           state.components[p.id].status = "on";
-          state.components[p.id].version = p.version || (p.id === "zapret2" ? "1.0.3" : p.id === "zapret" ? "1.10.0" : "latest");
+          state.components[p.id].version = p.version || (p.id === "zapret2" ? "1.0.3" : p.id === "zapret" ? "1.10.0" : p.id === "tg-ws-proxy" ? "1.8.1" : "latest");
           pushState();
           emit("component.update-result", { id: p.id, status: "success", version: state.components[p.id].version });
         }, 900);
@@ -353,6 +367,10 @@ export function createMockBridge(): ZapretHubBridge {
       }
       case "orchestrator.status":
         return structuredClone(state.orchestrator) as Commands[K]["out"];
+      case "tg.connect":
+        state.components["tg-ws-proxy"].status = "on";
+        pushState();
+        return undefined as Commands[K]["out"];
       case "orchestrator.setMode": {
         const p = payload as Commands["orchestrator.setMode"]["in"];
         const mode = p.mode === "auto" ? "auto" : "manual";

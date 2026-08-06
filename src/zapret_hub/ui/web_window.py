@@ -24,7 +24,7 @@ from zapret_hub.services.onboarding_state import onboarding_is_update
 from zapret_hub.runtime_env import is_packaged_runtime, packaged_install_root
 
 
-_COMPONENT_IDS = ("zapret", "zapret2", "xbox-dns")
+_COMPONENT_IDS = ("zapret", "zapret2", "tg-ws-proxy", "xbox-dns")
 _WINDOW_WIDTH = 860
 _WINDOW_HEIGHT = 520
 
@@ -527,7 +527,7 @@ class WebBridge(QObject):
         def worker() -> None:
             updates: list[dict[str, Any]] = []
             try:
-                for component_id in ("zapret", "zapret2"):
+                for component_id in ("zapret", "zapret2", "tg-ws-proxy"):
                     item = self._get_component_update_info(component_id)
                     if item["available"]:
                         updates.append(item)
@@ -1408,6 +1408,9 @@ class WebBridge(QObject):
 
             threading.Thread(target=_apply_settings_bg, daemon=True, name="zapret-hub-settings-apply").start()
             return None
+        if command == "tg.connect":
+            self._run_background(self._connect_telegram_proxy)
+            return None
         if command == "orchestrator.status":
             return self._orchestrator_snapshot()
         if command == "orchestrator.setMode":
@@ -1770,7 +1773,7 @@ class WebBridge(QObject):
             return None
         if command == "component.install-updates-all":
             ids = {str(item) for item in ((payload or {}).get("ids") or [])}
-            for component_id in ("zapret", "zapret2"):
+            for component_id in ("zapret", "zapret2", "tg-ws-proxy"):
                 if component_id in ids:
                     self._run_component_update(component_id)
             return None
@@ -1827,7 +1830,7 @@ class WebBridge(QObject):
             settings = self.context.settings.get()
             enabled_ids = {str(item) for item in settings.enabled_component_ids or []}
             autostart_ids = {str(item) for item in settings.autostart_component_ids or []}
-            bypass_services = set(ordered) - {"ai"}
+            bypass_services = set(ordered) - {"telegram-desktop", "ai"}
             active_backend = str(getattr(settings, "selected_runtime_mode", "zapret") or "zapret")
             if bypass_services:
                 if active_backend == "zapret2":
@@ -1841,6 +1844,12 @@ class WebBridge(QObject):
                 enabled_ids.discard("zapret2")
                 autostart_ids.discard("zapret")
                 autostart_ids.discard("zapret2")
+            if "telegram-desktop" in ordered:
+                enabled_ids.add("tg-ws-proxy")
+                autostart_ids.add("tg-ws-proxy")
+            else:
+                enabled_ids.discard("tg-ws-proxy")
+                autostart_ids.discard("tg-ws-proxy")
             if "ai" in ordered:
                 enabled_ids.add("xbox-dns")
             else:
@@ -1858,17 +1867,18 @@ class WebBridge(QObject):
             self.context.files._invalidate_collection_cache()
             self.context.files.rebuild_materialized_collections()
 
-        bypass_services = set(ordered) - {"ai"}
+        bypass_services = set(ordered) - {"telegram-desktop", "ai"}
         active_backend = str(getattr(self.context.settings.get(), "selected_runtime_mode", "zapret") or "zapret")
         if active_backend not in {"zapret", "zapret2"}:
             active_backend = "zapret"
         # Only restart the selected Quick Access bypass — never the other one.
         # Also restart TG/DNS when their enable flags change under live power.
         self._reconfigure_runtimes(
-            (active_backend, "xbox-dns"),
+            (active_backend, "tg-ws-proxy", "xbox-dns"),
             apply,
             restart_allowed={
                 active_backend: bool(bypass_services),
+                "tg-ws-proxy": "telegram-desktop" in ordered,
                 "xbox-dns": "ai" in ordered,
             },
         )
@@ -2049,8 +2059,8 @@ class WebBridge(QObject):
                     should_restart[component_id] = True
                 elif want_power and component_id == active and component_id in {"zapret", "zapret2"}:
                     should_restart[component_id] = True
-                elif want_power and component_id == "xbox-dns":
-                    # restart_allowed already says whether DNS should be on after apply.
+                elif want_power and component_id in {"tg-ws-proxy", "xbox-dns"}:
+                    # restart_allowed already says whether TG/DNS should be on after apply.
                     should_restart[component_id] = True
                 else:
                     should_restart[component_id] = False
@@ -2320,7 +2330,7 @@ class WebBridge(QObject):
                         return
                     desired = self._component_toggle_desired.pop(component_id)
                 try:
-                    aux = component_id == "xbox-dns"
+                    aux = component_id in {"tg-ws-proxy", "xbox-dns"}
                     if desired:
                         # Optional components only start when the main power is on.
                         if aux and not self._runtime_aux_should_run():
@@ -2471,7 +2481,10 @@ class WebBridge(QObject):
         self.emit_state()
 
     def _start_component(self, component_id: str) -> Any:
-        return self.context.processes.start_component(component_id)
+        result = self.context.processes.start_component(component_id)
+        if component_id == "tg-ws-proxy":
+            self._notify_telegram_proxy_result()
+        return result
 
     def _set_no_bypass_power(self, enabled: bool) -> None:
         self.context.settings.update(no_bypass_power_enabled=enabled)
@@ -2481,7 +2494,33 @@ class WebBridge(QObject):
         """Start/stop optional components that follow the main power button."""
         settings = self.context.settings.get()
         enabled_ids = {str(item) for item in (settings.enabled_component_ids or [])}
-        # DNS (xbox-dns) — follows power when enabled in Components.
+        # TG WS Proxy — follows power when enabled in Components.
+        if enabled and "tg-ws-proxy" in enabled_ids:
+            try:
+                # Surface "starting" in Quick Access before the listen wait finishes.
+                try:
+                    from zapret_hub.domain import ComponentState
+
+                    self.context.processes._states["tg-ws-proxy"] = ComponentState(
+                        component_id="tg-ws-proxy",
+                        status="starting",
+                    )
+                    self.context.processes._invalidate_state_cache()
+                    self.emit_state(force=True)
+                except Exception:
+                    pass
+                self._start_component("tg-ws-proxy")
+            except Exception as error:
+                try:
+                    self.context.logging.log("error", "Failed to start tg-ws-proxy with runtime", error=str(error))
+                except Exception:
+                    pass
+        else:
+            try:
+                self.context.processes.stop_component("tg-ws-proxy")
+            except Exception:
+                pass
+        # DNS (xbox-dns) — same policy; stop on power-off even if profile is dhcp.
         if enabled and "xbox-dns" in enabled_ids:
             try:
                 self._start_component("xbox-dns")
@@ -2521,6 +2560,39 @@ class WebBridge(QObject):
             return bool(self._want_runtime_power())
         except Exception:
             return False
+
+    def _connect_telegram_proxy(self) -> None:
+        self.context.processes.prompt_telegram_proxy_link()
+        self._notify_telegram_proxy_result()
+
+    def _notify_telegram_proxy_result(self) -> None:
+        # Only react to a connect attempt from this start. Empty info means TG proxy
+        # started without prompting (already configured) — never spam "open Telegram".
+        info = self.context.processes.consume_telegram_proxy_launch_info()
+        if not isinstance(info, dict) or not info:
+            return
+        if info.get("running_before") or info.get("running_after") or info.get("link_opened"):
+            return
+        if not info.get("missing"):
+            return
+        try:
+            if self.context.processes._is_telegram_running():
+                return
+        except Exception:
+            pass
+        language = str(self.context.settings.get().language or "ru")
+        message = (
+            "Запустите Telegram, затем откройте «Компоненты» и нажмите «Подключить Telegram» в TG WS Proxy."
+            if language == "ru"
+            else "Start Telegram, then open Components and click Connect Telegram in TG WS Proxy."
+        )
+        self.context.notifications.add(
+            "warn",
+            "TG WS Proxy",
+            message,
+            source="tg-ws-proxy",
+            details={"dedupe_key": "tg-ws-proxy-connect-telegram"},
+        )
 
     def _file_target(self, kind: str, name: str = "") -> Path:
         mapping = {
@@ -2670,6 +2742,11 @@ class WebBridge(QObject):
                     fill_versions(self.context.processes.list_zapret_releases(limit=30), current_version=current)
                     if not versions:
                         latest = str(self.context.processes.fetch_latest_zapret_release().get("latest_version", "") or "")
+                elif component_id == "tg-ws-proxy":
+                    current = self.context.storage._detect_tgws_version() or current
+                    fill_versions(self.context.processes.list_tg_ws_proxy_releases(limit=30), current_version=current)
+                    if not versions:
+                        latest = str(self.context.processes.fetch_latest_tg_ws_proxy_release().get("latest_version", "") or "")
                 elif component_id == "zapret2":
                     current = self.context.storage._detect_zapret2_version() or current
                     fill_versions(self.context.processes.list_zapret2_releases(limit=30), current_version=current)
@@ -2712,9 +2789,15 @@ class WebBridge(QObject):
                 return self.context.processes.install_zapret2_version(wanted)
             return self.context.processes.update_zapret2_runtime()
 
+        def tg_action() -> dict[str, str]:
+            if wanted:
+                return self.context.processes.install_tg_ws_proxy_version(wanted)
+            return self.context.processes.update_tg_ws_proxy_runtime()
+
         actions = {
             "zapret": zapret_action,
             "zapret2": zapret2_action,
+            "tg-ws-proxy": tg_action,
         }
         action = actions.get(component_id)
         if action is None:
@@ -2990,6 +3073,18 @@ class WebBridge(QObject):
         )
         zapret2_cli_before = zapret2_before[:4] + zapret2_before[5:]
         zapret2_strategy_before = zapret2_before[4]
+        tg_before = (
+            before.tg_proxy_host,
+            before.tg_proxy_port,
+            before.tg_proxy_secret,
+            before.tg_proxy_dc_ip,
+            before.tg_proxy_cfproxy_enabled,
+            before.tg_proxy_cfproxy_priority,
+            before.tg_proxy_cfproxy_domain,
+            before.tg_proxy_fake_tls_domain,
+            before.tg_proxy_buf_kb,
+            before.tg_proxy_pool_size,
+        )
         changes: dict[str, Any] = {}
         aliases = {
             "autoStart": "autostart_windows",
@@ -3053,6 +3148,17 @@ class WebBridge(QObject):
                 self._set_orchestrator_mode(
                     str(zapret2.get("controlMode") or "manual"), backend="zapret2", emit_state=False
                 )
+        tg = patch.get("tg")
+        if isinstance(tg, dict):
+            tg_aliases = {
+                "host": "tg_proxy_host", "port": "tg_proxy_port", "secret": "tg_proxy_secret",
+                "dcIp": "tg_proxy_dc_ip", "cfProxyEnabled": "tg_proxy_cfproxy_enabled",
+                "cfProxyPriority": "tg_proxy_cfproxy_priority", "cfProxyDomain": "tg_proxy_cfproxy_domain",
+                "fakeTlsDomain": "tg_proxy_fake_tls_domain", "bufferKb": "tg_proxy_buf_kb", "poolSize": "tg_proxy_pool_size",
+            }
+            for source, target in tg_aliases.items():
+                if source in tg:
+                    changes[target] = tg[source]
         if changes:
             if "ui_scale" in changes and str(changes.get("ui_scale") or "") not in {"0.75", "1", "1.25"}:
                 changes["ui_scale"] = "1"
@@ -3079,6 +3185,18 @@ class WebBridge(QObject):
         )
         zapret2_cli_after = zapret2_after[:4] + zapret2_after[5:]
         zapret2_strategy_after = zapret2_after[4]
+        tg_after = (
+            after.tg_proxy_host,
+            after.tg_proxy_port,
+            after.tg_proxy_secret,
+            after.tg_proxy_dc_ip,
+            after.tg_proxy_cfproxy_enabled,
+            after.tg_proxy_cfproxy_priority,
+            after.tg_proxy_cfproxy_domain,
+            after.tg_proxy_fake_tls_domain,
+            after.tg_proxy_buf_kb,
+            after.tg_proxy_pool_size,
+        )
         active = str(getattr(after, "selected_runtime_mode", "zapret") or "zapret")
         enabled_ids = {str(item) for item in (after.enabled_component_ids or [])}
         # Background restart while Quick Access stays visually on.
@@ -3097,6 +3215,11 @@ class WebBridge(QObject):
                     except Exception:
                         pass
                     self._reconfigure_runtimes(("zapret2",), lambda: None)
+        if tg_before != tg_after and (
+            self._component_running("tg-ws-proxy") or (want_power and "tg-ws-proxy" in enabled_ids)
+        ):
+            self._reconfigure_runtimes(("tg-ws-proxy",), lambda: None)
+
     def emit_state(self, *, force: bool = False) -> None:
         # During onboarding the UI uses local/event state. Pushing a full
         # state.changed mid-transition freezes step animations in WebEngine.
@@ -3232,6 +3355,7 @@ class WebBridge(QObject):
             source = {
                 "zapret": "zapret",
                 "zapret2": "zapret2",
+                "tg-ws-proxy": "tg",
             }.get(component_id, "app")
             try:
                 raw = str(entry.timestamp or "").strip()
@@ -3381,6 +3505,10 @@ class WebBridge(QObject):
                 "Системные DNS-серверы с выбором провайдера.",
                 "System DNS servers with a selectable provider.",
             ),
+            "tg-ws-proxy": (
+                "Прокси для Telegram через локальное подключение.",
+                "A Telegram proxy using a local connection.",
+            ),
         }
         for component_id in _COMPONENT_IDS:
             definition = definitions.get(component_id)
@@ -3415,7 +3543,7 @@ class WebBridge(QObject):
                 components[component_id]["version"] = "1.0.4"
         runtime_id = str(settings.selected_runtime_mode or "zapret")
         if runtime_id == "none":
-            auxiliary = [components.get("xbox-dns", {}).get("status", "off")]
+            auxiliary = [components.get(item, {}).get("status", "off") for item in ("tg-ws-proxy", "xbox-dns")]
             runtime_status = (
                 "error" if any(item == "error" for item in auxiliary)
                 else "starting" if any(item == "starting" for item in auxiliary)
@@ -3509,6 +3637,13 @@ class WebBridge(QObject):
                     "luaStrategy": settings.zapret2_lua_strategy,
                     "strategyId": str(getattr(settings, "zapret2_strategy_id", "balanced") or "balanced"),
                     "youtubeDiscordBypass": bool(getattr(settings, "zapret2_youtube_discord_bypass", True)),
+                },
+                "tg": {
+                    "host": settings.tg_proxy_host, "port": settings.tg_proxy_port, "secret": settings.tg_proxy_secret,
+                    "dcIp": settings.tg_proxy_dc_ip, "cfProxyEnabled": bool(settings.tg_proxy_cfproxy_enabled),
+                    "cfProxyPriority": bool(settings.tg_proxy_cfproxy_priority), "cfProxyDomain": settings.tg_proxy_cfproxy_domain,
+                    "fakeTlsDomain": settings.tg_proxy_fake_tls_domain, "bufferKb": settings.tg_proxy_buf_kb,
+                    "poolSize": settings.tg_proxy_pool_size,
                 },
                 "dns": {"profile": str(getattr(settings, "dns_profile", "xbox") or "xbox")},
                 "theme": settings.theme,

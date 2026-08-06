@@ -98,6 +98,7 @@ $nuitkaArgs = @(
   "--include-data-files=docs\legal\ZAPRET_HUB_TERMS_RU.txt=docs\legal\ZAPRET_HUB_TERMS_RU.txt",
   "--include-data-dir=$webUiDistStage=web_ui\dist",
   "--include-package=zapret_hub",
+  "--include-package=cryptography",
   "--include-package=certifi",
   "--include-package-data=certifi",
   "--nofollow-import-to=tkinter",

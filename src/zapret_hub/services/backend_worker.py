@@ -151,6 +151,12 @@ def _sync_aux_components_from_services(context) -> None:
     selected = {str(item) for item in list(settings.selected_service_ids or [])}
     enabled = {str(item) for item in list(settings.enabled_component_ids or [])}
     autostart = {str(item) for item in list(settings.autostart_component_ids or [])}
+    if "telegram-desktop" in selected:
+        enabled.add("tg-ws-proxy")
+        autostart.add("tg-ws-proxy")
+    else:
+        enabled.discard("tg-ws-proxy")
+        autostart.discard("tg-ws-proxy")
     if "ai" in selected:
         enabled.add("xbox-dns")
     else:
@@ -416,6 +422,8 @@ def _action_error_source(action: str) -> str:
     normalized = (action or "").strip().lower()
     if "xbox_dns" in normalized or "xbox-dns" in normalized or "dns" in normalized:
         return "xbox-dns"
+    if "tg_ws_proxy" in normalized or "tg-ws-proxy" in normalized or "telegram" in normalized:
+        return "tg-ws-proxy"
     if "zapret2" in normalized:
         return "zapret2"
     if "zapret" in normalized or "general" in normalized or "merge" in normalized:
@@ -580,7 +588,7 @@ def _run_action(context, action: str, payload: dict[str, Any], emit_progress: ca
                 },
                 emit_progress,
             )
-            for key in ("zapret_restarted", "theme_changed", "language_changed", "autostart_changed"):
+            for key in ("zapret_restarted", "tg_proxy_restarted", "theme_changed", "language_changed", "autostart_changed"):
                 if bool(settings_result.get(key)):
                     result[key] = settings_result.get(key)
         if isinstance(mods_payload, dict) and mods_payload:
@@ -626,6 +634,18 @@ def _run_action(context, action: str, payload: dict[str, Any], emit_progress: ca
             before.zapret_udp_exclude_ports,
             before.selected_zapret_general,
         )
+        tg_before = (
+            before.tg_proxy_host,
+            int(before.tg_proxy_port),
+            before.tg_proxy_secret,
+            before.tg_proxy_dc_ip,
+            bool(before.tg_proxy_cfproxy_enabled),
+            bool(before.tg_proxy_cfproxy_priority),
+            before.tg_proxy_cfproxy_domain,
+            before.tg_proxy_fake_tls_domain,
+            int(before.tg_proxy_buf_kb),
+            int(before.tg_proxy_pool_size),
+        )
         theme_before = before.theme
         language_before = before.language
         autostart_before = bool(before.autostart_windows)
@@ -647,7 +667,24 @@ def _run_action(context, action: str, payload: dict[str, Any], emit_progress: ca
             current.zapret_udp_exclude_ports,
             current.selected_zapret_general,
         )
+        tg_after = (
+            str(effective_payload.get("tg_proxy_host", current.tg_proxy_host)),
+            int(effective_payload.get("tg_proxy_port", current.tg_proxy_port)),
+            str(effective_payload.get("tg_proxy_secret", current.tg_proxy_secret)),
+            str(effective_payload.get("tg_proxy_dc_ip", current.tg_proxy_dc_ip)),
+            bool(effective_payload.get("tg_proxy_cfproxy_enabled", current.tg_proxy_cfproxy_enabled)),
+            bool(effective_payload.get("tg_proxy_cfproxy_priority", current.tg_proxy_cfproxy_priority)),
+            str(effective_payload.get("tg_proxy_cfproxy_domain", current.tg_proxy_cfproxy_domain)),
+            str(effective_payload.get("tg_proxy_fake_tls_domain", current.tg_proxy_fake_tls_domain)),
+            int(effective_payload.get("tg_proxy_buf_kb", current.tg_proxy_buf_kb)),
+            int(effective_payload.get("tg_proxy_pool_size", current.tg_proxy_pool_size)),
+        )
         states = {item.component_id: item for item in context.processes.list_states()}
+        tg_proxy_restarted = False
+        if tg_before != tg_after and states.get("tg-ws-proxy") and states["tg-ws-proxy"].status == "running":
+            context.processes.stop_component("tg-ws-proxy")
+            context.processes.start_component("tg-ws-proxy")
+            tg_proxy_restarted = True
         zapret_restarted = False
         # Only rebuild/restart when Zapret knobs actually changed (same 5-tuple).
         if zapret_changed and zapret_before != zapret_after:
@@ -657,6 +694,7 @@ def _run_action(context, action: str, payload: dict[str, Any], emit_progress: ca
             "language_changed": language_before != context.settings.get().language,
             "autostart_changed": autostart_before != bool(context.settings.get().autostart_windows),
             "client_revision": client_revision,
+            "tg_proxy_restarted": tg_proxy_restarted,
             "zapret_restarted": zapret_restarted,
         }
         result.update(_snapshot(context))

@@ -223,6 +223,7 @@ class ProcessManager:
         self._diagnostic_token = 0
         self._image_running_cache: dict[str, tuple[float, bool]] = {}
         self._port_listening_cache: dict[tuple[str, int], tuple[float, bool]] = {}
+        self._telegram_proxy_launch_info: dict[str, Any] | None = None
         self._github_recovery_profile: dict[str, str] | None = None
         self._component_releases_mem: dict[str, tuple[float, list[dict[str, str]]]] = {}
         self._zapret_runtime_lock = threading.RLock()
@@ -311,6 +312,33 @@ class ProcessManager:
                     }
                 )
         return sorted(options, key=self._general_option_sort_key)
+
+    def prompt_telegram_proxy_link(self) -> None:
+        settings = self.settings.get()
+        secret = (settings.tg_proxy_secret or "").strip().lower()
+        if secret.startswith("dd") and len(secret) > 2:
+            secret = secret[2:]
+        if not secret:
+            secret = secrets.token_hex(16)
+            settings = self.settings.update(tg_proxy_secret=secret)
+        signature = (
+            f"{settings.tg_proxy_host}:{int(settings.tg_proxy_port)}:{secret}:"
+            f"{settings.tg_proxy_dc_ip}:{settings.tg_proxy_cfproxy_enabled}:"
+            f"{settings.tg_proxy_cfproxy_priority}:{settings.tg_proxy_cfproxy_domain}:"
+            f"{settings.tg_proxy_fake_tls_domain}:{settings.tg_proxy_buf_kb}:{settings.tg_proxy_pool_size}"
+        )
+        self._ensure_telegram_and_open_proxy_link(
+            host=settings.tg_proxy_host,
+            port=int(settings.tg_proxy_port),
+            secret=secret,
+        )
+        if signature != str(settings.tg_proxy_link_prompt_signature or ""):
+            self.settings.update(tg_proxy_link_prompt_signature=signature)
+
+    def consume_telegram_proxy_launch_info(self) -> dict[str, Any] | None:
+        info = self._telegram_proxy_launch_info
+        self._telegram_proxy_launch_info = None
+        return dict(info) if isinstance(info, dict) else None
 
     def abort_diagnostics(self, *, kill_winws: bool = True) -> None:
         """Stop general/settings diagnostics immediately.
@@ -414,6 +442,18 @@ class ProcessManager:
                 state.status = "running" if bool(dns_state.get("active", False)) else "stopped"
                 state.pid = None
                 state.last_error = str(dns_state.get("last_error", "") or "")
+            elif component.id == "tg-ws-proxy":
+                # Prefer owned Popen — never pay a socket timeout while Hub owns the process.
+                worker = self._processes.get(component.id)
+                if worker is not None and worker.poll() is None:
+                    state.status = "running"
+                    state.pid = worker.pid
+                elif self._is_port_listening(settings.tg_proxy_host, int(settings.tg_proxy_port)):
+                    state.status = "running"
+                    state.pid = None
+                else:
+                    state.status = "stopped"
+                    state.pid = None
             else:
                 process = self._processes.get(component.id)
                 if process and process.poll() is None:
@@ -523,6 +563,10 @@ class ProcessManager:
             state = self._start_xbox_dns(component_id)
             self._invalidate_state_cache()
             return state
+        if component.id == "tg-ws-proxy":
+            state = self._start_tg_ws_proxy(component_id)
+            self._invalidate_state_cache()
+            return state
         current = self._processes.get(component_id)
         if current and current.poll() is None:
             return self._states.get(component_id, ComponentState(component_id=component_id, status="running", pid=current.pid))
@@ -592,6 +636,19 @@ class ProcessManager:
             return state
         if component_id == "xbox-dns":
             state = self._stop_xbox_dns(component_id)
+            self._invalidate_state_cache()
+            return state
+        if component_id == "tg-ws-proxy":
+            settings = self.settings.get()
+            self._kill_image("TgWsProxy_windows.exe")
+            self._close_source_log_stream("tg-ws-proxy")
+            still_listening = self._is_port_listening(settings.tg_proxy_host, int(settings.tg_proxy_port))
+            state.status = "running" if still_listening else "stopped"
+            state.pid = None
+            if still_listening:
+                state.last_error = "Failed to stop TgWsProxy_windows.exe"
+            self._states[component_id] = state
+            self.logging.log("info", "TG WS Proxy stopped")
             self._invalidate_state_cache()
             return state
         process = self._processes.get(component_id)
@@ -2145,6 +2202,148 @@ Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
             game_flag.write_text(game_mode, encoding="utf-8")
         elif game_flag.exists():
             game_flag.unlink(missing_ok=True)
+
+    def _start_tg_ws_proxy(self, component_id: str) -> ComponentState:
+        # перезапуск без споров со старыми процессами
+        self.stop_component(component_id)
+
+        settings = self.settings.get()
+        secret = (settings.tg_proxy_secret or "").strip().lower()
+        if secret.startswith("dd") and len(secret) > 2:
+            secret = secret[2:]
+        if not secret:
+            secret = secrets.token_hex(16)
+        if secret != settings.tg_proxy_secret:
+            settings = self.settings.update(tg_proxy_secret=secret)
+        # старый процесс мог остаться в трее
+        self._kill_image("TgWsProxy_windows.exe")
+        listen_host = settings.tg_proxy_host
+        listen_port = int(settings.tg_proxy_port)
+        self._port_listening_cache.pop((str(listen_host or ""), int(listen_port)), None)
+        if self._is_port_listening(listen_host, listen_port):
+            state = ComponentState(component_id=component_id, status="running", pid=None, last_error="")
+            self._states[component_id] = state
+            self._invalidate_state_cache()
+            self.logging.log("info", "TG WS Proxy already listening", host=listen_host, port=listen_port)
+            return state
+        try:
+            (self.storage.paths.logs_dir / "tg_worker_error.log").unlink(missing_ok=True)
+        except Exception:
+            pass
+        command = self._build_worker_command(
+            "tg-ws-proxy",
+            tg_host=settings.tg_proxy_host,
+            tg_port=int(settings.tg_proxy_port),
+            tg_secret=secret,
+            tg_dc_ip=self._parse_tg_dc_ip_settings(settings.tg_proxy_dc_ip),
+            tg_cfproxy_enabled=bool(settings.tg_proxy_cfproxy_enabled),
+            tg_cfproxy_priority=bool(settings.tg_proxy_cfproxy_priority),
+            tg_cfproxy_domain=settings.tg_proxy_cfproxy_domain,
+            tg_fake_tls_domain=settings.tg_proxy_fake_tls_domain,
+            tg_buf_kb=int(settings.tg_proxy_buf_kb or 256),
+            tg_pool_size=int(settings.tg_proxy_pool_size or 4),
+        )
+        process = subprocess.Popen(
+            command,
+            cwd=str(self.storage.paths.install_root),
+            creationflags=self._creationflags,
+            startupinfo=self._startupinfo,
+            env=self._build_worker_env(),
+            stdout=self._open_source_log_stream("tg-ws-proxy"),
+            stderr=subprocess.STDOUT,
+        )
+        # Assign to kill-on-close job immediately (before listen wait).
+        if self._job and process.pid:
+            if not self._job.assign_pid(process.pid):
+                self.logging.log("warning", "Failed to assign TG WS Proxy to job object", pid=process.pid)
+        ready = False
+        for _ in range(16):
+            if process.poll() is not None:
+                break
+            self._port_listening_cache.pop((str(listen_host or ""), int(listen_port)), None)
+            if self._is_port_listening(listen_host, listen_port):
+                ready = True
+                break
+            time.sleep(0.35)
+        if not ready:
+            error_hint = "TG WS Proxy worker did not open listening port."
+            worker_error_log = self.storage.paths.logs_dir / "tg_worker_error.log"
+            if worker_error_log.exists():
+                error_hint = worker_error_log.read_text(encoding="utf-8")[-1000:]
+            try:
+                if process.poll() is None:
+                    process.kill()
+            except Exception:
+                pass
+            try:
+                self._kill_image("TgWsProxy_windows.exe")
+            except Exception:
+                pass
+            state = ComponentState(
+                component_id=component_id,
+                status="error",
+                last_error=error_hint,
+            )
+            self._states[component_id] = state
+            self._invalidate_state_cache()
+            self.logging.log("error", "TG WS Proxy worker failed to start", error=error_hint)
+            return state
+        state = ComponentState(component_id=component_id, status="running", pid=process.pid)
+        self._processes[component_id] = process
+        self._states[component_id] = state
+        self._port_listening_cache[(str(listen_host or ""), int(listen_port))] = (time.time(), True)
+        self._invalidate_state_cache()
+        self.logging.log("info", "TG WS Proxy worker started", pid=process.pid)
+        if not str(settings.tg_proxy_link_prompt_signature or "").strip():
+            self.prompt_telegram_proxy_link()
+        return state
+
+    def _parse_tg_dc_ip_settings(self, value: str) -> list[str]:
+        result: list[str] = []
+        for raw in re.split(r"[\n,;]+", str(value or "")):
+            item = raw.strip()
+            if item:
+                result.append(item)
+        if not result:
+            # без этого tg-ws-proxy сам подставляет дефолтные dc
+            return ["__empty__"]
+        return result
+
+    def _ensure_telegram_and_open_proxy_link(self, host: str, port: int, secret: str) -> dict[str, Any]:
+        self.logging.log("info", "TG WS Proxy auto-connect requested", component_id="tg-ws-proxy", host=host, port=port)
+        running_before = self._is_telegram_running()
+        candidate_found = any(candidate.exists() for candidate in self._telegram_desktop_candidates())
+        launch_requested = False
+        if not running_before:
+            self.logging.log("info", "Telegram Desktop is not running, opening proxy link without forced launch", component_id="tg-ws-proxy")
+        running_after = self._is_telegram_running()
+        self.logging.log("info", "Sending proxy link to Telegram", component_id="tg-ws-proxy")
+        link_opened = self._open_telegram_proxy_link(host=host, port=port, secret=secret)
+        info = {
+            "running_before": running_before,
+            "running_after": running_after,
+            "desktop_candidate_found": candidate_found,
+            "launch_requested": launch_requested,
+            "link_opened": link_opened,
+            "missing": not running_after and not link_opened,
+        }
+        self._telegram_proxy_launch_info = info
+        if not running_after and not link_opened:
+            self.logging.log("warning", "Telegram was not detected after proxy start", component_id="tg-ws-proxy")
+        return info
+
+    def _open_telegram_proxy_link(self, host: str, port: int, secret: str) -> bool:
+        link = f"tg://proxy?server={host}&port={port}&secret=dd{secret}"
+        try:
+            if sys.platform.startswith("win"):
+                os.startfile(link)  # type: ignore[attr-defined]
+            else:
+                webbrowser.open(link)
+            self.logging.log("info", "Telegram proxy link opened", link=link)
+            return True
+        except Exception as error:
+            self.logging.log("warning", "Failed to open Telegram proxy link", link=link, error=str(error))
+            return False
 
     def _build_worker_command(self, worker: str, **kwargs: Any) -> list[str]:
         cmd: list[str]
@@ -4094,6 +4293,255 @@ Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
         if latest_version and current_version == latest_version:
             return {"status": "up-to-date", "version": current_version}
         return self.install_zapret2_version(latest_version or current_version)
+
+    def fetch_latest_tg_ws_proxy_release(self) -> dict[str, str]:
+        api_url = "https://api.github.com/repos/Flowseal/tg-ws-proxy/releases/latest"
+        try:
+            payload = self.github.github_json(api_url, timeout=20, purpose="tg-ws-proxy-release-metadata")
+            if not isinstance(payload, dict):
+                raise ValueError("Invalid tg-ws-proxy release metadata")
+        except Exception as error:
+            self.logging.log("warning", "TG WS Proxy release metadata fallback", error=str(error))
+            fallback = self._fetch_latest_release_atom("Flowseal/tg-ws-proxy")
+            tag = str(fallback.get("tag") or "")
+            version = str(fallback.get("latest_version") or "")
+            return {
+                "latest_version": version,
+                "source_url": (
+                    f"https://codeload.github.com/Flowseal/tg-ws-proxy/zip/refs/tags/{urllib.parse.quote(tag)}"
+                    if tag
+                    else "https://codeload.github.com/Flowseal/tg-ws-proxy/zip/refs/heads/main"
+                ),
+                "exe_url": (
+                    f"https://github.com/Flowseal/tg-ws-proxy/releases/download/"
+                    f"{urllib.parse.quote(tag)}/TgWsProxy_windows.exe"
+                    if tag
+                    else "https://github.com/Flowseal/tg-ws-proxy/releases/latest/download/TgWsProxy_windows.exe"
+                ),
+                "exe_name": "TgWsProxy_windows.exe",
+            }
+        latest_version = str(payload.get("tag_name") or payload.get("name") or "").strip().lstrip("v")
+        assets = [item for item in list(payload.get("assets") or []) if isinstance(item, dict)]
+        windows_asset = next(
+            (
+                item
+                for item in assets
+                if str(item.get("name", "")).strip().lower() == "tgwsproxy_windows.exe"
+            ),
+            None,
+        )
+        return {
+            "latest_version": latest_version,
+            "source_url": str(payload.get("zipball_url") or "").strip(),
+            "exe_url": str((windows_asset or {}).get("browser_download_url", "")).strip(),
+            "exe_name": str((windows_asset or {}).get("name", "")).strip() or "TgWsProxy_windows.exe",
+        }
+
+    def list_tg_ws_proxy_releases(self, *, limit: int = 25) -> list[dict[str, str]]:
+        """List Flowseal/tg-ws-proxy GitHub releases (newest first)."""
+        repository = "Flowseal/tg-ws-proxy"
+        capped = max(1, min(int(limit), 40))
+        cache_key = "tg-ws-proxy"
+        api_url = f"https://api.github.com/repos/{repository}/releases?per_page={capped}"
+        try:
+            payload = self.github.github_json(api_url, timeout=25, purpose="tg-ws-proxy-releases")
+        except Exception as error:
+            self.logging.log("warning", "TG WS Proxy releases API failed", error=str(error))
+            cached = self._load_component_releases_cache(cache_key)
+            if cached:
+                self.logging.log("info", "Using cached TG WS Proxy releases after API failure", count=len(cached))
+                return cached[:capped]
+            try:
+                atom_items = self._fetch_release_atom_entries(repository, limit=capped)
+            except Exception as atom_error:
+                self.logging.log("warning", "TG WS Proxy releases atom fallback failed", error=str(atom_error))
+                atom_items = []
+            if atom_items:
+                out: list[dict[str, str]] = []
+                for item in atom_items:
+                    version = str(item.get("version") or "")
+                    tag = str(item.get("tag") or f"v{version}")
+                    if not str(tag).startswith("v"):
+                        tag = f"v{version}"
+                    out.append(
+                        {
+                            "version": version,
+                            "tag": tag,
+                            "source_url": (
+                                f"https://codeload.github.com/{repository}/zip/refs/tags/{urllib.parse.quote(tag)}"
+                            ),
+                            "zipball_url": (
+                                f"https://codeload.github.com/{repository}/zip/refs/tags/{urllib.parse.quote(tag)}"
+                            ),
+                            "exe_url": (
+                                f"https://github.com/{repository}/releases/download/"
+                                f"{urllib.parse.quote(tag)}/TgWsProxy_windows.exe"
+                            ),
+                            "exe_name": "TgWsProxy_windows.exe",
+                            "published_at": str(item.get("published_at") or ""),
+                            "prerelease": "0",
+                            "recommended": "1" if not out else "0",
+                        }
+                    )
+                if out:
+                    self._save_component_releases_cache(cache_key, out)
+                return out[:capped]
+            try:
+                latest = self.fetch_latest_tg_ws_proxy_release()
+                version = str(latest.get("latest_version") or "")
+                if not version:
+                    return []
+                return [
+                    {
+                        "version": version,
+                        "tag": f"v{version}",
+                        "source_url": str(latest.get("source_url") or ""),
+                        "exe_url": str(latest.get("exe_url") or ""),
+                        "exe_name": str(latest.get("exe_name") or "TgWsProxy_windows.exe"),
+                        "zipball_url": str(latest.get("source_url") or ""),
+                        "published_at": "",
+                        "prerelease": "0",
+                        "recommended": "1",
+                    }
+                ]
+            except Exception as latest_error:
+                self.logging.log("warning", "TG WS Proxy latest fallback failed", error=str(latest_error))
+                return []
+        if not isinstance(payload, list):
+            return []
+        result: list[dict[str, str]] = []
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            tag = str(item.get("tag_name") or "").strip()
+            version = tag.lstrip("vV")
+            assets = [a for a in list(item.get("assets") or []) if isinstance(a, dict)]
+            windows_asset = next(
+                (
+                    a
+                    for a in assets
+                    if str(a.get("name", "")).strip().lower() == "tgwsproxy_windows.exe"
+                ),
+                None,
+            )
+            result.append(
+                {
+                    "version": version,
+                    "tag": tag,
+                    "source_url": str(item.get("zipball_url") or "").strip(),
+                    "zipball_url": str(item.get("zipball_url") or "").strip(),
+                    "exe_url": str((windows_asset or {}).get("browser_download_url", "")).strip(),
+                    "exe_name": str((windows_asset or {}).get("name", "")).strip() or "TgWsProxy_windows.exe",
+                    "published_at": str(item.get("published_at") or ""),
+                    "prerelease": "1" if bool(item.get("prerelease")) else "0",
+                    "recommended": "1" if not result else "0",
+                }
+            )
+        if result:
+            self._save_component_releases_cache(cache_key, result)
+        return result[:capped]
+
+    def install_tg_ws_proxy_version(self, version: str) -> dict[str, str]:
+        wanted = str(version or "").strip().lstrip("vV")
+        if not wanted:
+            return {"status": "error", "error": "Version is required"}
+        current = str(self.storage._detect_tgws_version() or "").strip()
+        if current and current == wanted:
+            return {"status": "up-to-date", "version": current}
+        release: dict[str, str] | None = None
+        for item in self.list_tg_ws_proxy_releases(limit=40):
+            if str(item.get("version") or "").strip() == wanted or str(item.get("tag") or "").strip().lstrip("vV") == wanted:
+                release = item
+                break
+        if release is None:
+            tag = f"v{wanted}" if not str(version).startswith("v") else str(version)
+            release = {
+                "latest_version": wanted,
+                "version": wanted,
+                "tag": tag,
+                "source_url": f"https://codeload.github.com/Flowseal/tg-ws-proxy/zip/refs/tags/{urllib.parse.quote(tag)}",
+                "exe_url": (
+                    "https://github.com/Flowseal/tg-ws-proxy/releases/download/"
+                    f"{urllib.parse.quote(tag)}/TgWsProxy_windows.exe"
+                ),
+                "exe_name": "TgWsProxy_windows.exe",
+            }
+        else:
+            release = {
+                "latest_version": str(release.get("version") or wanted),
+                "source_url": str(release.get("source_url") or ""),
+                "exe_url": str(release.get("exe_url") or ""),
+                "exe_name": str(release.get("exe_name") or "TgWsProxy_windows.exe"),
+            }
+        return self._install_tg_ws_proxy_release(release)
+
+    def update_tg_ws_proxy_runtime(self) -> dict[str, str]:
+        return self._install_tg_ws_proxy_release(self.fetch_latest_tg_ws_proxy_release())
+
+    def _install_tg_ws_proxy_release(self, release: dict[str, str]) -> dict[str, str]:
+        latest_version = str(release.get("latest_version") or release.get("version") or "").strip()
+        current_version = self.storage._detect_tgws_version()
+        if latest_version and current_version == latest_version:
+            return {"status": "up-to-date", "version": current_version}
+        source_url = str(release.get("source_url", "")).strip()
+        exe_url = str(release.get("exe_url", "")).strip()
+        if not source_url or not exe_url:
+            return {"status": "error", "error": "No tg-ws-proxy source or Windows asset found"}
+
+        runtime_root = self.storage.paths.runtime_dir / "tg-ws-proxy"
+        was_running = False
+        try:
+            tg_state = next((item for item in self.list_states() if item.component_id == "tg-ws-proxy"), None)
+            was_running = bool(tg_state and tg_state.status == "running")
+        except Exception:
+            was_running = False
+        temp_root = Path(tempfile.mkdtemp(prefix="zapret_hub_tgws_update_"))
+        try:
+            source_zip = temp_root / "tg-ws-proxy.zip"
+            self._download_to_file(source_url, source_zip, timeout=75)
+            extract_root = temp_root / "extract"
+            extract_root.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(source_zip, "r") as archive:
+                archive.extractall(extract_root)
+            source_root = next((p for p in extract_root.iterdir() if p.is_dir() and (p / "proxy").exists()), None)
+            if source_root is None:
+                return {"status": "error", "error": "Invalid tg-ws-proxy source archive"}
+
+            windows_exe_path = temp_root / str(release.get("exe_name", "TgWsProxy_windows.exe"))
+            self._download_to_file(exe_url, windows_exe_path, timeout=75)
+
+            if was_running:
+                self.stop_component("tg-ws-proxy")
+
+            backup = self.storage.create_backup(runtime_root, "pre-update-tg-ws-proxy")
+            staging_root = temp_root / "runtime_new"
+            shutil.copytree(source_root, staging_root, dirs_exist_ok=True)
+            (staging_root / "bin").mkdir(parents=True, exist_ok=True)
+            shutil.copy2(windows_exe_path, staging_root / "bin" / "TgWsProxy_windows.exe")
+
+            if runtime_root.exists():
+                shutil.rmtree(runtime_root, ignore_errors=True)
+            shutil.copytree(staging_root, runtime_root, dirs_exist_ok=True)
+            init_py = runtime_root / "proxy" / "__init__.py"
+            if latest_version and init_py.exists():
+                try:
+                    content = init_py.read_text(encoding="utf-8", errors="ignore")
+                    content = re.sub(r'__version__\s*=\s*["\'].*?["\']', f'__version__ = "{latest_version}"', content, count=1)
+                    init_py.write_text(content, encoding="utf-8")
+                except Exception:
+                    pass
+            self.storage.ensure_layout()
+            if was_running:
+                self.start_component("tg-ws-proxy")
+            self.logging.log(
+                "info",
+                "TG WS Proxy updated",
+                version=latest_version,
+                backup=str(backup or ""),
+            )
+            return {"status": "updated", "version": latest_version or current_version}
+        finally:
+            shutil.rmtree(temp_root, ignore_errors=True)
 
     def _download_to_file(self, url: str, destination: Path, timeout: int = 60) -> None:
         self.github.github_download(url, destination, timeout=timeout, purpose=f"download:{Path(destination).name}", min_bytes=1024)

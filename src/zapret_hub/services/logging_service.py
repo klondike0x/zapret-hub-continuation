@@ -18,6 +18,7 @@ class LoggingManager:
         self.log_path = self.storage.paths.logs_dir / "app.log"
         self.zapret_log_path = self.storage.paths.logs_dir / "zapret.log"
         self.zapret2_log_path = self.storage.paths.logs_dir / "zapret2.log"
+        self.tg_log_path = self.storage.paths.logs_dir / "tg_ws_proxy.log"
         self.reset_runtime_logs()
 
     def reset_runtime_logs(self) -> None:
@@ -27,6 +28,8 @@ class LoggingManager:
         for path in (
             self.zapret_log_path,
             self.zapret2_log_path,
+            self.tg_log_path,
+            self.storage.paths.logs_dir / "tg_worker_error.log",
         ):
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -62,6 +65,8 @@ class LoggingManager:
             return str(self.zapret_log_path)
         if source_id == "zapret2":
             return str(self.zapret2_log_path)
+        if source_id in {"tg-ws-proxy", "tg"}:
+            return str(self.tg_log_path)
         return str(self.log_path)
 
     def log(self, level: str, message: str, **context: Any) -> LogEntry:
@@ -91,6 +96,9 @@ class LoggingManager:
 
     def read_source_lines(self, source: str, limit: int = 250) -> list[str]:
         source_id = (source or "app").strip().lower()
+        # Web UI uses short aliases (tg); process files use component ids.
+        if source_id == "tg":
+            source_id = "tg-ws-proxy"
         if source_id == "app":
             return self._format_entries(self.read_entries()[-limit:])
         if source_id == "zapret":
@@ -116,6 +124,18 @@ class LoggingManager:
             )
             lines.extend(self._read_plain_log_tail("zapret2.log", limit=limit, heading=None))
             return lines[-limit:]
+        if source_id == "tg-ws-proxy":
+            entries = [
+                entry
+                for entry in self.read_entries()
+                if str(entry.context.get("component_id", "") or "") == "tg-ws-proxy"
+                or "tg ws proxy" in entry.message.lower()
+                or "telegram proxy" in entry.message.lower()
+            ]
+            lines = self._format_entries(entries[-limit:])
+            lines.extend(self._read_plain_log_tail("tg_ws_proxy.log", limit=limit, heading=None))
+            lines.extend(self._read_plain_log_tail("tg_worker_error.log", limit=80, heading="tg_worker_error.log"))
+            return lines[-limit:] if len(lines) > limit else lines
         if source_id == "all":
             return self._read_all_source_lines(limit=limit)
         return self._format_entries(self.read_entries()[-limit:])
@@ -131,6 +151,8 @@ class LoggingManager:
         for source, filename, source_limit in (
             ("zapret", "zapret.log", limit),
             ("zapret2", "zapret2.log", limit),
+            ("tg-ws-proxy", "tg_ws_proxy.log", limit),
+            ("tg-ws-proxy", "tg_worker_error.log", 80),
         ):
             for stamp, line in self._read_plain_log_tail_records(filename, limit=source_limit):
                 records.append((stamp, ordinal, f"[{source}] {line}"))

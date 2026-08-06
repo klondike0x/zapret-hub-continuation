@@ -14,6 +14,7 @@ export type ComponentUpdateItem = {
 const icons: Record<string, string> = {
   zapret: "component_zapret.svg",
   zapret2: "component_zapret2.svg",
+  "tg-ws-proxy": "component_tg.svg",
 };
 
 export function ComponentUpdatesModal({

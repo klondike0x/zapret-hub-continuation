@@ -1,6 +1,6 @@
 // Zapret Hub bridge contract — shared with Python side.
 export type RuntimeId = "zapret" | "zapret2" | "none";
-export type ComponentId = "zapret" | "zapret2" | "xbox-dns";
+export type ComponentId = "zapret" | "zapret2" | "tg-ws-proxy" | "xbox-dns";
 export type Locale = "ru" | "en";
 export type RuntimeStatus = "off" | "starting" | "stopping" | "on" | "error";
 export type ComponentStatus = "off" | "on" | "starting" | "stopping" | "error" | "updating";
@@ -14,7 +14,7 @@ export type FileKind =
   | "hosts"
   | "advanced";
 
-export type LogSource = "app" | "zapret" | "zapret2";
+export type LogSource = "app" | "zapret" | "zapret2" | "tg";
 
 export interface Service {
   id: string;
@@ -116,6 +116,18 @@ export interface Settings {
     luaStrategy: string;
     strategyId?: string;
     youtubeDiscordBypass?: boolean;
+  };
+  tg: {
+    host: string;
+    port: number;
+    secret: string;
+    dcIp: string;
+    cfProxyEnabled: boolean;
+    cfProxyPriority: boolean;
+    cfProxyDomain: string;
+    fakeTlsDomain: string;
+    bufferKb: number;
+    poolSize: number;
   };
   dns: {
     profile: "dhcp" | "xbox" | "cloudflare" | "adguard" | "google" | "yandex";
@@ -257,6 +269,7 @@ export type Commands = {
   };
   "onboarding.configure": { in: { selected?: string[] } | void; out: void };
   "onboarding.cancel": { in: void; out: void };
+  "tg.connect": { in: void; out: void };
   "orchestrator.status": { in: void; out: OrchestratorStatus };
   "orchestrator.setMode": { in: { mode: "manual" | "auto"; backend?: "zapret" | "zapret2" }; out: OrchestratorStatus };
   /** Clear Auto overlay + knowledge so Auto can learn from scratch. Battle lists stay intact. */

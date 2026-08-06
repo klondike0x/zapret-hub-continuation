@@ -29,6 +29,8 @@ def _should_skip_path(path: Path, source_dir: Path) -> bool:
     except Exception:
         return False
     parts = rel.parts
+    if any(part.startswith("tg-ws-proxy.bak.") for part in parts):
+        return True
     lowered = tuple(part.lower() for part in parts)
     if "docs" in lowered and rel.name.lower() == "readme.md":
         return True
@@ -129,7 +131,7 @@ def _package_portable(
             f"pruned runtime for {arch}: dirs={stats['removed_dirs']} "
             f"files={stats['removed_files']} elf={stats['removed_elf']}"
         )
-    for backup_dir in portable_dir.rglob("*.bak.*"):
+    for backup_dir in portable_dir.rglob("tg-ws-proxy.bak.*"):
         if backup_dir.is_dir():
             shutil.rmtree(backup_dir, ignore_errors=True)
 

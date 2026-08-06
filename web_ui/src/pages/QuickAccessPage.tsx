@@ -20,7 +20,7 @@ function statusTone(status: RuntimeStatus) {
   return status === "on" ? "ok" : status === "starting" || status === "stopping" ? "warn" : status === "error" ? "err" : "muted" as const;
 }
 
-function StatusIcon({ kind, status }: { kind: "app" | "mode" | "mods" | "theme"; status?: string }) {
+function StatusIcon({ kind, status }: { kind: "app" | "mode" | "tg" | "mods" | "theme"; status?: string }) {
   if (kind === "theme") return <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-sky-500/15 text-sky-400"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" className="block"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 1 1-9-9Z" /></svg></span>;
   if (kind === "mods") return <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-violet-400"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" className="block"><path d="m12 2 8.7 5v10L12 22l-8.7-5V7z" /></svg></span>;
   const color = status === "on" ? "var(--ok)" : status === "error" ? "var(--err)" : status === "starting" || status === "stopping" ? "var(--warn)" : "var(--fg-mute)";
@@ -33,7 +33,7 @@ function StatusIcon({ kind, status }: { kind: "app" | "mode" | "mods" | "theme";
 }
 
 export function QuickAccessPage({ onOpenComponent }: {
-  onOpenComponent?: (id: "zapret" | "zapret2") => void;
+  onOpenComponent?: (id: "zapret" | "zapret2" | "tg-ws-proxy") => void;
 }) {
   const state = useAppState();
   const bridge = useBridge();
@@ -192,6 +192,7 @@ export function QuickAccessPage({ onOpenComponent }: {
     : pendingPower ?? state.runtime.status;
   const on = status === "on";
   const enabledMods = state.mods.filter((mod) => mod.enabled).length;
+  const tgStatus = state.components["tg-ws-proxy"]?.status ?? "off";
   // Same settle for click and wheel — apply only after 1.5s without further input.
   const selectMode = (id: RuntimeId) => {
     notePowerIntent(state);
@@ -218,6 +219,7 @@ export function QuickAccessPage({ onOpenComponent }: {
   const cards = [
     { label: t("status.app"), value: runtimeLabel(status), kind: "app" as const, status },
     { label: modeNames[active], value: runtimeLabel(status), kind: "mode" as const, status },
+    { label: t("status.tgproxy"), value: tgStatus === "on" ? t("power.on") : tgStatus === "starting" ? t("power.starting") : tgStatus === "stopping" ? (locale === "ru" ? "Отключение…" : "Disconnecting…") : tgStatus === "error" ? t("power.error") : t("power.off"), kind: "tg" as const, status: tgStatus },
     { label: t("status.mods"), value: `${enabledMods} ${locale === "ru" ? "активно" : "active"}`, kind: "mods" as const },
     { label: t("status.theme"), value: themeName[state.settings.theme] ?? state.settings.theme, kind: "theme" as const },
   ];
@@ -287,7 +289,7 @@ export function QuickAccessPage({ onOpenComponent }: {
 
       <div className="grid w-full shrink-0 grid-cols-5 gap-2.5">
         {cards.map((card) => {
-          const componentId = card.kind === "mode" && active !== "none" ? active : null;
+          const componentId = card.kind === "mode" && active !== "none" ? active : card.kind === "tg" ? "tg-ws-proxy" : null;
           return (
           <button key={card.kind} disabled={!componentId} onClick={() => componentId && onOpenComponent?.(componentId)} className="quick-status-card soft-card min-w-0 rounded-[15px] border border-line-1 px-3.5 py-3.5 text-left disabled:cursor-default">
             <AnimatePresence mode="wait" initial={false}>

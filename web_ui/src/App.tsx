@@ -366,7 +366,7 @@ function Shell() {
         nodes.quick = <QuickAccessPage onOpenComponent={(id) => { setFocusedComponent(id); setNav("components"); }} />;
       } else if (key === "components") {
         nodes.components = <ComponentsPage focusId={focusedComponent} onFocusHandled={() => setFocusedComponent(null)} onConfigure={(id) => {
-          setSettingsTab(id === "zapret2" ? "zapret2" : "zapret");
+          setSettingsTab(id === "tg-ws-proxy" ? "tg" : id === "zapret2" ? "zapret2" : "zapret");
           setNav("settings");
         }} onReconfigure={() => {
           setForcedOnboardingMode("zapret");

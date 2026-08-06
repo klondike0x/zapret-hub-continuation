@@ -15,7 +15,7 @@ import type { RuntimeId, Settings } from "@/bridge/types";
 import type { NavKey } from "@/components/shell/Sidebar";
 import { uiAssetUrl } from "@/lib/assets";
 
-export type SettingsTab = "app" | "zapret" | "zapret2";
+export type SettingsTab = "app" | "zapret" | "zapret2" | "tg";
 
 const THEMES = [
   { id: "oled", name: "Obsidian", swatch: ["#090a0d", "#151820", "#edf1f8"] },
@@ -155,6 +155,7 @@ export function SettingsModal({
     { key: "app", label: t("settings.tab.app") },
     { key: "zapret", label: "Zapret" },
     { key: "zapret2", label: "Zapret 2" },
+    { key: "tg", label: "TG WS Proxy" },
   ];
   const modeLabels: Record<RuntimeId, string> = { zapret: "Zapret", zapret2: "Zapret2", none: L("Без основного компонента", "No primary component") };
   const selectTab = (next: SettingsTab) => {
@@ -533,6 +534,28 @@ export function SettingsModal({
               />
             </Row>
             <Row label={L("Своя стратегия", "Custom strategy")} hint={L("Доп. --filter/--lua-desync после стандартных профилей (Discord не отключается). В Auto игнорируется.", "Extra --filter/--lua-desync after default profiles (Discord stays). Ignored in Auto.")}><textarea disabled={(settings.zapret2.controlMode ?? "manual") === "auto"} value={settings.zapret2.luaStrategy} onChange={(event) => patch({ zapret2: { ...settings.zapret2, luaStrategy: event.target.value } })} className="h-28 w-[250px] resize-none rounded-[10px] border border-line-1 bg-bg-1 p-2.5 font-mono text-[10px] text-fg outline-none focus:border-line-2 disabled:cursor-not-allowed disabled:opacity-50" /></Row>
+          </Section>
+        </>}
+
+        {tab === "tg" && <>
+          <Section title="TG WS Proxy">
+            <Row label={L("Хост прослушивания", "Listen host")}><input value={settings.tg.host} onChange={(event) => patch({ tg: { ...settings.tg, host: event.target.value } })} className={inputClass} /></Row>
+            <Row label={L("Порт", "Port")}><input type="number" value={settings.tg.port} onChange={(event) => patch({ tg: { ...settings.tg, port: Number(event.target.value) } })} className={inputClass} /></Row>
+            <Row label={L("Секрет", "Secret")}><input value={settings.tg.secret} onChange={(event) => patch({ tg: { ...settings.tg, secret: event.target.value } })} className={inputClass} /></Row>
+            <Row label="Media mode"><SelectField value={settings.tg.dcIp === "4:149.154.167.220" ? "media_fix" : settings.tg.dcIp ? "default" : "empty"} onChange={(value) => patch({ tg: { ...settings.tg, dcIp: value === "media_fix" ? "4:149.154.167.220" : value === "empty" ? "" : "2:149.154.167.220\n4:149.154.167.220" } })} options={[
+              { value: "default", label: L("Стандартный", "Default") },
+              { value: "media_fix", label: "Media fix" },
+              { value: "empty", label: L("Без DC override", "No DC override") },
+            ]} /></Row>
+            <Row label="DC IP"><textarea value={settings.tg.dcIp} onChange={(event) => patch({ tg: { ...settings.tg, dcIp: event.target.value } })} className="h-16 w-[250px] resize-none rounded-[10px] border border-line-1 bg-bg-1 p-2.5 text-[11px] text-fg outline-none focus:border-line-2" /></Row>
+          </Section>
+          <Section title="Cloudflare Proxy">
+            <Row label="CfProxy"><IosToggle on={settings.tg.cfProxyEnabled} onChange={(value) => patch({ tg: { ...settings.tg, cfProxyEnabled: value } })} /></Row>
+            <Row label={L("Приоритет CfProxy", "CfProxy priority")}><IosToggle on={settings.tg.cfProxyPriority} onChange={(value) => patch({ tg: { ...settings.tg, cfProxyPriority: value } })} /></Row>
+            <Row label={L("Домен CfProxy", "CfProxy domain")}><input value={settings.tg.cfProxyDomain} onChange={(event) => patch({ tg: { ...settings.tg, cfProxyDomain: event.target.value } })} className={inputClass} /></Row>
+            <Row label="Fake TLS domain"><input value={settings.tg.fakeTlsDomain} onChange={(event) => patch({ tg: { ...settings.tg, fakeTlsDomain: event.target.value } })} className={inputClass} /></Row>
+            <Row label={L("Буфер, КБ", "Buffer, KB")}><input type="number" value={settings.tg.bufferKb} onChange={(event) => patch({ tg: { ...settings.tg, bufferKb: Number(event.target.value) } })} className={inputClass} /></Row>
+            <Row label={L("Размер пула", "Pool size")}><input type="number" value={settings.tg.poolSize} onChange={(event) => patch({ tg: { ...settings.tg, poolSize: Number(event.target.value) } })} className={inputClass} /></Row>
           </Section>
         </>}
 

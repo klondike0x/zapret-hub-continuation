@@ -10,11 +10,11 @@ import { uiAssetUrl } from "@/lib/assets";
 import { ScrollGlassHeader } from "@/components/ui/ScrollGlassHeader";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 
-const ORDER: ComponentId[] = ["zapret", "zapret2", "xbox-dns"];
-const GITHUB_VERSION_IDS: ComponentId[] = ["zapret", "zapret2"];
+const ORDER: ComponentId[] = ["zapret", "zapret2", "tg-ws-proxy", "xbox-dns"];
+const GITHUB_VERSION_IDS: ComponentId[] = ["zapret", "zapret2", "tg-ws-proxy"];
 
 const componentIcon: Record<ComponentId, string> = {
-  zapret: "component_zapret.svg", zapret2: "component_zapret2.svg", "xbox-dns": "component_xbox_dns.svg",
+  zapret: "component_zapret.svg", zapret2: "component_zapret2.svg", "tg-ws-proxy": "component_tg.svg", "xbox-dns": "component_xbox_dns.svg",
 };
 
 const DNS_PROFILE_IDS: Array<Settings["dns"]["profile"]> = ["dhcp", "xbox", "cloudflare", "adguard", "google", "yandex"];
@@ -267,9 +267,10 @@ export function ComponentsPage({ onConfigure, onReconfigure, onOpenManual, focus
                   <div className="flex flex-wrap items-center gap-1.5">
                     {id !== "xbox-dns" && <button disabled={checkingId === id || updatingId === id} onClick={() => checkUpdate(id)} className="rounded-lg border border-line-1 bg-bg-1 px-2.5 py-1.5 text-[11px] text-fg-dim transition-all duration-200 hover:bg-bg-3 hover:text-fg disabled:opacity-50">{updatingId === id ? t("component.updating") : checkingId === id ? t("component.checking") : t("component.update")}</button>}
                     {id === "xbox-dns" && <button onClick={() => setDnsOpen((value) => !value)} className="rounded-lg border border-line-1 bg-bg-1 px-2.5 py-1.5 text-[11px] text-fg-dim transition-all duration-200 hover:bg-bg-3 hover:text-fg">{t("component.chooseDns")}</button>}
+                    {id === "tg-ws-proxy" && <button onClick={() => bridge.call("tg.connect", undefined)} className="rounded-lg border border-line-1 bg-bg-1 px-2.5 py-1.5 text-[11px] text-fg-dim transition-all duration-200 hover:bg-bg-3 hover:text-fg">{t("component.connectTg")}</button>}
                     {id === "zapret" && controlMode("zapret") !== "auto" && <button onClick={onReconfigure} className="rounded-lg border border-line-1 bg-bg-1 px-2.5 py-1.5 text-[11px] text-fg-dim transition-all duration-200 hover:bg-bg-3 hover:text-fg">{locale === "ru" ? "Настроить сервисы" : "Configure services"}</button>}
                   </div>
-                  {id === "xbox-dns" && <IosToggle on={on} onChange={(v) => toggleComponent(id, v)} label={c.name} />}
+                  {(id === "tg-ws-proxy" || id === "xbox-dns") && <IosToggle on={on} onChange={(v) => toggleComponent(id, v)} label={c.name} />}
                 </div>
                 {(id === "zapret" || id === "zapret2") && controlMode(id) === "manual" && (
                   <div className="mt-2.5 border-t border-line-1 pt-2.5">

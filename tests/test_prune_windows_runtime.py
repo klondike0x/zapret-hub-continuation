@@ -26,11 +26,13 @@ def test_prune_removes_foreign_binaries_keeps_windows_x64(tmp_path: Path) -> Non
     drop_android = runtime / "zapret2" / "binaries" / "android-arm64" / "mdig"
     drop_x86 = runtime / "zapret2" / "binaries" / "windows-x86" / "winws2.exe"
     sources = runtime / "zapret2" / "nfq2" / "desync.c"
+    workflow = runtime / "tg-ws-proxy" / ".github" / "workflows" / "build.yml"
     _write(keep, b"MZ")
     _write(drop_linux, b"\x7fELF\x02")
     _write(drop_android, b"\x7fELF\x01")
     _write(drop_x86, b"MZ")
     _write(sources, b"int main(){}")
+    _write(workflow, b"name: build")
 
     stats = prune_windows_runtime(runtime)
     assert keep.is_file()
@@ -38,7 +40,8 @@ def test_prune_removes_foreign_binaries_keeps_windows_x64(tmp_path: Path) -> Non
     assert not drop_android.exists()
     assert not drop_x86.exists()
     assert not sources.exists()
-    assert stats["removed_dirs"] >= 4
+    assert not workflow.exists()
+    assert stats["removed_dirs"] >= 5
 
 
 def test_prune_safety_net_deletes_stray_elf(tmp_path: Path) -> None:

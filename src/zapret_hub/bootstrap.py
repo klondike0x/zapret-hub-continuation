@@ -2,6 +2,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 import os
+import secrets
 import shutil
 import sys
 from typing import Any
@@ -173,6 +174,8 @@ def build_startup_snapshot(context: ApplicationContext) -> dict[str, Any]:
 def _prime_first_run_state(settings: SettingsManager, processes: ProcessManager) -> None:
     current = settings.get()
     changes: dict[str, Any] = {}
+    if not (current.tg_proxy_secret or "").strip():
+        changes["tg_proxy_secret"] = secrets.token_hex(16)
     if str(current.zapret_ipset_mode or "").strip() not in {"loaded", "none", "any"}:
         changes["zapret_ipset_mode"] = "loaded"
     if str(current.zapret_game_filter_mode or "").strip() not in {"disabled", "tcp", "udp", "tcpudp"}:

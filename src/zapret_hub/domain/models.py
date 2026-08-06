@@ -36,6 +36,17 @@ class AppSettings:
     enabled_zapret2_mod_ids: list[str] = field(default_factory=list)
     mods_index_url: str = ""
     app_update_url: str = ""
+    tg_proxy_host: str = "127.0.0.1"
+    tg_proxy_port: int = 1443
+    tg_proxy_secret: str = ""
+    tg_proxy_dc_ip: str = "4:149.154.167.220"
+    tg_proxy_cfproxy_enabled: bool = True
+    tg_proxy_cfproxy_priority: bool = True
+    tg_proxy_cfproxy_domain: str = ""
+    tg_proxy_fake_tls_domain: str = ""
+    tg_proxy_buf_kb: int = 256
+    tg_proxy_pool_size: int = 4
+    tg_proxy_link_prompt_signature: str = ""
     selected_zapret_general: str = ""
     favorite_zapret_generals: list[str] = field(default_factory=list)
     general_autotest_done: bool = False

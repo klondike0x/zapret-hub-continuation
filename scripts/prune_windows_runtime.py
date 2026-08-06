@@ -22,6 +22,8 @@ _DROP_WINDOWS_X86 = True
 
 # Source / build trees never needed at Windows runtime.
 _DROP_RELATIVE_DIRS = (
+    # Repository metadata from the bundled tg-ws-proxy source is not runtime data.
+    Path("tg-ws-proxy") / ".github",
     Path("zapret2") / "nfq2",
     Path("zapret2") / "docs" / "compile",
     Path("zapret2") / "ip2net",

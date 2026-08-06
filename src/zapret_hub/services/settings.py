@@ -54,6 +54,10 @@ class SettingsManager:
                     settings.zapret_game_filter_mode or "disabled"
                 ) == "disabled":
                     settings.zapret_game_filter_mode = "tcpudp"
+            # New clients: TG WS Proxy on; stock services selected (CF/Discord/YT/Gaming/Clouds).
+            enabled = {str(item) for item in (settings.enabled_component_ids or [])}
+            if "tg-ws-proxy" not in enabled:
+                settings.enabled_component_ids = sorted([*enabled, "tg-ws-proxy"])
             settings.component_selection_initialized = True
             changed = True
 

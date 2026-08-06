@@ -4,7 +4,7 @@ import { useLocale } from "@/hooks/useLocale";
 import { Segmented } from "@/components/ui/Segmented";
 import type { LogSource } from "@/bridge/types";
 
-const SOURCES: (LogSource | "all")[] = ["all", "app", "zapret", "zapret2"];
+const SOURCES: (LogSource | "all")[] = ["all", "app", "zapret", "zapret2", "tg"];
 
 /** Poll only while this page is the active nav — pages stay mounted after prewarm. */
 export function LogsPage({ active = false }: { active?: boolean }) {

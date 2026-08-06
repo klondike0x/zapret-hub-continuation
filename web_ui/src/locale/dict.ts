@@ -22,6 +22,7 @@ const ru = {
 
   "status.app": "Приложение",
   "status.bypass": "Соединение",
+  "status.tgproxy": "TG Proxy",
   "status.mods": "Модификации",
   "status.theme": "Тема",
 
@@ -48,6 +49,7 @@ const ru = {
   "component.connect": "Подключить",
   "component.trial": "10 дней бесплатно",
   "component.chooseDns": "Выбрать DNS",
+  "component.connectTg": "Подключить Telegram",
   "component.reconfigure": "Настроить заново",
   "component.mode.auto": "Автоматический",
   "component.mode.manual": "Вручную",
@@ -127,10 +129,13 @@ const ru = {
   "logs.source.app": "App",
   "logs.source.zapret": "Zapret",
   "logs.source.zapret2": "Zapret2",
+  "logs.source.tg": "TG",
 
   "settings.title": "Настройки",
   "settings.tab.app": "Приложение",
   "settings.tab.zapret": "Zapret",
+  "settings.tab.zapret2": "Zapret 2",
+  "settings.tab.tg": "TG WS Proxy",
   "settings.theme": "Тема",
   "settings.language": "Язык",
   "settings.autostart": "Автозапуск",
@@ -208,6 +213,7 @@ const en: Record<keyof typeof ru, string> = {
 
   "status.app": "App",
   "status.bypass": "Connection",
+  "status.tgproxy": "TG Proxy",
   "status.mods": "Mods",
   "status.theme": "Theme",
 
@@ -234,6 +240,7 @@ const en: Record<keyof typeof ru, string> = {
   "component.connect": "Connect",
   "component.trial": "10 days free",
   "component.chooseDns": "Choose DNS",
+  "component.connectTg": "Connect Telegram",
   "component.reconfigure": "Run setup again",
   "component.mode.auto": "Automatic",
   "component.mode.manual": "Manual",
@@ -313,10 +320,13 @@ const en: Record<keyof typeof ru, string> = {
   "logs.source.app": "App",
   "logs.source.zapret": "Zapret",
   "logs.source.zapret2": "Zapret2",
+  "logs.source.tg": "TG",
 
   "settings.title": "Settings",
   "settings.tab.app": "Application",
   "settings.tab.zapret": "Zapret",
+  "settings.tab.zapret2": "Zapret 2",
+  "settings.tab.tg": "TG WS Proxy",
   "settings.theme": "Theme",
   "settings.language": "Language",
   "settings.autostart": "Autostart",
