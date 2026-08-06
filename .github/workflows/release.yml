@@ -85,6 +85,7 @@ jobs:
             ".\dist_installer\uninstall_zaprethub.exe"
           )
           $runtimeTargets = @(
+            ".\dist_nuitka\main.dist\runtime\tg-ws-proxy\bin\TgWsProxy_windows.exe",
             ".\dist_nuitka\main.dist\runtime\zapret-discord-youtube\bin\winws.exe",
             ".\dist_nuitka\main.dist\runtime\zapret2\binaries\windows-x86_64\winws2.exe"
           )
@@ -168,6 +169,7 @@ jobs:
             ".\dist_installer\uninstall_zaprethub.exe"
           )
           $runtimeTargets = @(
+            ".\dist_nuitka\main.dist\runtime\tg-ws-proxy\bin\TgWsProxy_windows.exe",
             ".\dist_nuitka\main.dist\runtime\zapret-discord-youtube\bin\winws.exe",
             ".\dist_nuitka\main.dist\runtime\zapret2\binaries\windows-x86_64\winws2.exe"
           )
