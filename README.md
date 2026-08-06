@@ -2,10 +2,7 @@
 
 # Zapret Hub (continuation)
 
-This is a fork of [Goshkow/Zapret-Hub](https://github.com/goshkow/Zapret-Hub) (MIT) after the original was taken down.
-VPN and Marketplace components have been removed. This project now only provides DPI bypass via [bol-van/zapret2](https://github.com/bol-van/zapret2).
-
-Это независимое продолжение оригинального проекта **Zapret Hub**. VPN и Marketplace удалены; остался только обход DPI через zapret.
+Это форк [Goshkow/Zapret-Hub](https://github.com/goshkow/Zapret-Hub) (MIT) — независимое продолжение после закрытия оригинального проекта. VPN и Marketplace удалены; проект предоставляет обход DPI через [bol-van/zapret2](https://github.com/bol-van/zapret2).
 
 <p align="center">
   <picture>
