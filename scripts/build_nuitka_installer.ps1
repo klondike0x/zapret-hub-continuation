@@ -81,7 +81,7 @@ if ($Standalone) {
     "--onefile",
     "--onefile-as-archive",
     "--onefile-cache-mode=cached",
-    "--onefile-tempdir-spec={CACHE_DIR}/goshkow/zapret-hub-installer/{VERSION}"
+    "--onefile-tempdir-spec={CACHE_DIR}/zapret-hub-continuation/zapret-hub-installer/{VERSION}"
   )
 }
 
@@ -100,7 +100,7 @@ function Build-Uninstaller {
       "--onefile-as-archive",
       "--onefile-no-compression",
       "--onefile-cache-mode=cached",
-      "--onefile-tempdir-spec={CACHE_DIR}/goshkow/zapret-hub-uninstaller/{VERSION}"
+      "--onefile-tempdir-spec={CACHE_DIR}/zapret-hub-continuation/zapret-hub-uninstaller/{VERSION}"
     )
   }
   $uninstallNuitkaArgs = @(
@@ -115,12 +115,12 @@ function Build-Uninstaller {
     "--windows-uac-admin",
     "--deployment",
     "--windows-icon-from-ico=ui_assets\icons\app_shell.ico",
-    "--company-name=goshkow",
+    "--company-name=zapret-hub-continuation",
     "--product-name=Zapret Hub Uninstaller",
     "--file-version=$fileVersion",
     "--product-version=$fileVersion",
     "--file-description=Zapret Hub Uninstaller",
-    "--copyright=goshkow",
+    "--copyright=zapret-hub-continuation",
     "--output-dir=$OutDir",
     "--output-filename=uninstall_zaprethub.exe",
     # The uninstaller only resolves these icon files at runtime. Shipping the
@@ -215,12 +215,12 @@ $nuitkaArgs = @(
   "--windows-uac-admin",
   "--deployment",
   "--windows-icon-from-ico=ui_assets\icons\app_shell.ico",
-  "--company-name=goshkow",
+  "--company-name=zapret-hub-continuation",
   "--product-name=Zapret Hub Installer",
   "--file-version=$fileVersion",
   "--product-version=$fileVersion",
   "--file-description=Zapret Hub Installer",
-  "--copyright=goshkow",
+  "--copyright=zapret-hub-continuation",
   "--output-dir=$OutputDir",
   "--output-filename=$installerName",
   "--include-data-dir=ui_assets=ui_assets",

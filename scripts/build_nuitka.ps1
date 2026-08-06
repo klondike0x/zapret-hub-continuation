@@ -68,7 +68,6 @@ foreach ($pattern in $excludeFilePatterns) {
         Remove-Item -Force -ErrorAction SilentlyContinue
 }
 
-# runtime-конфиг vpn каждый раз собирается заново при запуске
 # Drop Linux/Android/FreeBSD ELF + compile junk from Windows packages (keeps WinDivert).
 & $PythonExe scripts\prune_windows_runtime.py $runtimeStage
 if ($LASTEXITCODE -ne 0) { throw "prune_windows_runtime.py failed with exit code $LASTEXITCODE" }
@@ -86,12 +85,12 @@ $nuitkaArgs = @(
   "--windows-console-mode=disable",
   "--deployment",
   "--windows-icon-from-ico=ui_assets\icons\app_shell.ico",
-  '--company-name=goshkow',
+  '--company-name=zapret-hub-continuation',
   '--product-name=Zapret Hub',
   "--file-version=$fileVersion",
   "--product-version=$fileVersion",
   '--file-description=Zapret Hub',
-  '--copyright=goshkow',
+  '--copyright=zapret-hub-continuation',
   "--output-dir=$OutputDir",
   "--output-filename=Zapret_Hub.exe",
   "--include-data-dir=sample_data=sample_data",
@@ -99,7 +98,6 @@ $nuitkaArgs = @(
   "--include-data-files=docs\legal\ZAPRET_HUB_TERMS_RU.txt=docs\legal\ZAPRET_HUB_TERMS_RU.txt",
   "--include-data-dir=$webUiDistStage=web_ui\dist",
   "--include-package=zapret_hub",
-  "--include-package=cryptography",
   "--include-package=certifi",
   "--include-package-data=certifi",
   "--nofollow-import-to=tkinter",

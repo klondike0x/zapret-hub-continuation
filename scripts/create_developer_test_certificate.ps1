@@ -1,8 +1,8 @@
 param(
-    [string]$OutputPath = ".\\local-dev\\goshkow-zapret-hub-self-signed.pfx",
+    [string]$OutputPath = ".\\local-dev\\zapret-hub-continuation-self-signed.pfx",
     [Parameter(Mandatory = $true)]
     [string]$Password,
-    [string]$Subject = "CN=goshkow, O=Goshkow, C=RU"
+    [string]$Subject = "CN=zapret-hub-continuation, O=zapret-hub-continuation, C=RU"
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,7 +25,7 @@ if (Test-Path -LiteralPath $output) {
 $certificate = New-SelfSignedCertificate `
     -Type CodeSigningCert `
     -Subject $Subject `
-    -FriendlyName "Zapret Hub developer signing (goshkow)" `
+    -FriendlyName "Zapret Hub developer signing (zapret-hub-continuation)" `
     -CertStoreLocation "Cert:\CurrentUser\My" `
     -KeyAlgorithm RSA `
     -KeyLength 3072 `

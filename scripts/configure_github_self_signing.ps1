@@ -1,7 +1,7 @@
 param(
-    [string]$Repository = "goshkow/Zapret-Hub",
-    [string]$CertificatePath = ".\\local-dev\\goshkow-zapret-hub-self-signed.pfx",
-    [string]$PasswordPath = ".\\local-dev\\goshkow-zapret-hub-self-signed-password.txt"
+    [string]$Repository = "klondike0x/zapret-hub-continuation",
+    [string]$CertificatePath = ".\\local-dev\\zapret-hub-continuation-self-signed.pfx",
+    [string]$PasswordPath = ".\\local-dev\\zapret-hub-continuation-self-signed-password.txt"
 )
 
 $ErrorActionPreference = "Stop"

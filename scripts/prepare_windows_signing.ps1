@@ -1,6 +1,6 @@
 param(
     [string]$CertificatePath = (Join-Path $env:RUNNER_TEMP "zapret-hub-signing.pfx"),
-    [string]$Subject = "CN=goshkow, O=Goshkow, C=RU"
+    [string]$Subject = "CN=zapret-hub-continuation, O=zapret-hub-continuation, C=RU"
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,7 +23,7 @@ $securePassword = ConvertTo-SecureString -String $password -AsPlainText -Force
 $certificate = New-SelfSignedCertificate `
     -Type CodeSigningCert `
     -Subject $Subject `
-    -FriendlyName "Zapret Hub build signing (goshkow)" `
+    -FriendlyName "Zapret Hub build signing (zapret-hub-continuation)" `
     -CertStoreLocation "Cert:\CurrentUser\My" `
     -KeyAlgorithm RSA `
     -KeyLength 3072 `
@@ -35,4 +35,4 @@ Export-PfxCertificate -Cert $certificate -FilePath $CertificatePath -Password $s
 $env:WINDOWS_SIGNING_PFX_PATH = $CertificatePath
 $env:WINDOWS_SIGNING_PFX_PASSWORD = $password
 $env:WINDOWS_SIGNING_ALLOW_SELF_SIGNED = "true"
-Write-Warning "No trusted PFX secret is configured. Using an ephemeral self-signed goshkow certificate for this build."
+Write-Warning "No trusted PFX secret is configured. Using an ephemeral self-signed zapret-hub-continuation certificate for this build."
