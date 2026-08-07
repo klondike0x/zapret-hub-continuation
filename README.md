@@ -2,9 +2,10 @@
 
 # Zapret Hub
 
-This is a fork of [Goshkow/Zapret-Hub](https://github.com/goshkow/Zapret-Hub) (MIT), now maintained independently by @klondike0x.
+**Форк Goshkow/Zapret-Hub (MIT). Самостоятельно поддерживается [@klondike0x](https://github.com/klondike0x).**
 
-DPI bypass via zapret. GUI + orchestrator. Cross-platform (Windows, Linux, macOS).
+Современный графический интерфейс и оркестратор для [zapret](https://github.com/bol-van/zapret) – обхода DPI.  
+Кроссплатформенный (Windows, Linux, macOS) со встроенным веб‑интерфейсом.
 
 <p align="center">
   <picture>
